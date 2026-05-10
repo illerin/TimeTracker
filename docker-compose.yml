@@ -1,0 +1,22 @@
+services:
+  timetracker:
+    build:
+      context: .
+      target: prod
+    ports:
+      - "3000:3000"
+    volumes:
+      - timetracker-data:/data
+
+  test:
+    build:
+      context: .
+      target: dev
+    command: npx jest --runInBand
+    environment:
+      - DB_PATH=/tmp/test.db
+    profiles:
+      - test
+
+volumes:
+  timetracker-data:

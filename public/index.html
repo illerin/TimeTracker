@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Time Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    h1 { font-size: 1.8rem; margin-bottom: 1.5rem; }
+
+    .nav-buttons {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #2563eb;
+      color: #fff;
+      transition: background 0.15s;
+    }
+    button:hover { background: #1d4ed8; }
+    button.secondary { background: #6b7280; }
+    button.secondary:hover { background: #4b5563; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    button.small { padding: 0.3rem 0.7rem; font-size: 0.85rem; }
+
+    /* ── Heat-map calendars ── */
+    .calendars-row {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 2rem;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    .heatmap-cal {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem 1.2rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      flex: 1 1 340px;
+      min-width: 280px;
+    }
+    .heatmap-cal h3 {
+      text-align: center;
+      font-size: 1rem;
+      margin-bottom: 0.6rem;
+      color: #374151;
+    }
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 3px;
+    }
+    .cal-grid .dh {
+      text-align: center;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #9ca3af;
+      padding-bottom: 0.2rem;
+    }
+    .cal-grid .dc {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      transition: opacity 0.1s;
+      font-weight: 500;
+    }
+    .cal-grid .dc:hover { opacity: 0.8; outline: 2px solid #2563eb; }
+    .cal-grid .dc.empty { border: none; cursor: default; }
+    .cal-grid .dc.today { outline: 2px solid #2563eb; font-weight: 700; }
+    /* Hour-band colours */
+    .cal-grid .dc.h-red    { background: #fca5a5; color: #7f1d1d; }
+    .cal-grid .dc.h-orange { background: #fdba74; color: #7c2d12; }
+    .cal-grid .dc.h-yellow { background: #fde047; color: #713f12; }
+    .cal-grid .dc.h-green  { background: #86efac; color: #14532d; }
+    .cal-grid .dc.h-blue   { background: #93c5fd; color: #1e3a5f; }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 2rem;
+      font-size: 0.8rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+    .legend-swatch {
+      width: 14px; height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+
+    /* ── Daily Editor ── */
+    #daily-editor {
+      width: 100%;
+      max-width: 800px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      margin-bottom: 2rem;
+    }
+    #daily-editor h2 { margin-bottom: 1rem; font-size: 1.2rem; }
+    #date-picker-label { display: block; margin-bottom: 0.4rem; font-weight: 600; }
+    #date-picker { padding: 0.4rem 0.6rem; font-size: 1rem; border: 1px solid #d1d5db; border-radius: 4px; }
+
+    .entry-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    .entry-table th, .entry-table td {
+      text-align: left;
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 0.95rem;
+    }
+    .entry-table th { background: #f9fafb; font-weight: 600; }
+    .entry-table td input, .entry-table td select, .entry-table td textarea {
+      padding: 0.3rem 0.4rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      background: #fff;
+      font-family: inherit;
+    }
+    .entry-table td textarea {
+      width: 100%;
+      min-width: 280px;
+      resize: none;
+      height: 1.8rem;
+      overflow: hidden;
+    }
+    .time-selects { display: flex; gap: 0.25rem; align-items: center; }
+    .time-selects select { width: auto; }
+    .empty-state { color: #6b7280; font-style: italic; padding: 1rem 0; }
+    .inline-error { color: #dc2626; font-size: 0.85rem; margin-top: 0.3rem; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 10px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 900px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    .modal h2 { margin-bottom: 1.2rem; }
+    .modal-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border-radius: 6px;
+      padding: 0.7rem 1rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .modal-error.visible { display: block; }
+    .modal-actions { display: flex; gap: 0.8rem; margin-top: 1.2rem; justify-content: flex-end; }
+
+    /* ── Modal Calendar (date picker) ── */
+    .modal-cal-wrapper { margin-bottom: 1.2rem; }
+    .modal-cal-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.6rem;
+    }
+    .modal-cal-nav button { background: #e5e7eb; color: #222; padding: 0.3rem 0.7rem; }
+    .modal-cal-nav button:hover { background: #d1d5db; }
+    .modal-cal-label { font-weight: 600; }
+    .modal-cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+    }
+    .modal-cal-grid .day-header {
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #6b7280;
+      padding: 0.2rem;
+    }
+    .modal-cal-grid .day {
+      text-align: center;
+      padding: 0.4rem 0.2rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .modal-cal-grid .day:hover { background: #dbeafe; }
+    .modal-cal-grid .day.selected { background: #2563eb; color: #fff; }
+    .modal-cal-grid .day.today { font-weight: 700; }
+    .modal-cal-grid .day.empty { cursor: default; }
+
+    /* ── Autocomplete ── */
+    .autocomplete-wrapper { position: relative; }
+    .autocomplete-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      z-index: 200;
+      max-height: 150px;
+      overflow-y: auto;
+      display: none;
+    }
+    .autocomplete-list.open { display: block; }
+    .autocomplete-list li {
+      list-style: none;
+      padding: 0.4rem 0.6rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .autocomplete-list li:hover { background: #f3f4f6; }
+  </style>
+</head>
+<body>
+  <h1>Time Tracker</h1>
+
+  <div class="nav-buttons">
+    <button id="btn-add-workday">Add Workday</button>
+    <button id="btn-view-summary" class="secondary">View Summary</button>
+    <button id="btn-export" class="secondary">Export Data</button>
+    <button id="btn-settings" class="secondary">⚙ Settings</button>
+  </div>
+
+  <!-- Heat-map calendars -->
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+    <button id="heatmap-prev" class="secondary small" aria-label="Previous months">&#8249; Prev</button>
+    <span id="heatmap-range-label" style="font-weight:600;font-size:0.95rem;min-width:220px;text-align:center;"></span>
+    <button id="heatmap-next" class="secondary small" aria-label="Next months" disabled>Next &#8250;</button>
+  </div>
+  <div class="calendars-row" id="heatmap-row"></div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#fff;border:1px solid #e5e7eb;"></div> No hours</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fca5a5;"></div> 0.25–4 hrs</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fdba74;"></div> 4.25–6 hrs</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fde047;"></div> 6.25–7.5 hrs</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#86efac;"></div> 7.75–8.25 hrs</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#93c5fd;"></div> 8.5+ hrs</div>
+  </div>
+
+  <!-- Daily Editor -->
+  <section id="daily-editor">
+    <h2>Daily View</h2>
+    <label id="date-picker-label" for="date-picker">Select a date to view or edit entries:</label>
+    <input type="date" id="date-picker" />
+    <div id="daily-entries-container"></div>
+  </section>
+
+  <!-- Add Workday Modal -->
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal">
+      <h2 id="modal-title">Add Workday</h2>
+      <div class="modal-error" id="modal-error" role="alert"></div>
+
+      <!-- Modal Calendar -->
+      <div class="modal-cal-wrapper">
+        <div class="modal-cal-nav">
+          <button id="cal-prev" aria-label="Previous month">&#8249;</button>
+          <span class="modal-cal-label" id="cal-month-label"></span>
+          <button id="cal-next" aria-label="Next month">&#8250;</button>
+        </div>
+        <div class="modal-cal-grid" id="cal-grid" role="grid" aria-label="Date picker"></div>
+      </div>
+      <p id="selected-date-label" style="margin-bottom:0.8rem;font-weight:600;"></p>
+
+      <!-- Entry Table -->
+      <table class="entry-table" id="modal-entry-table">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Description</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="modal-entry-tbody"></tbody>
+      </table>
+
+      <div style="margin-top:0.8rem;">
+        <button id="btn-add-row" class="secondary small">+ Add Row</button>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-modal-cancel" class="secondary">Cancel</button>
+        <button id="btn-modal-done">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal" style="max-width:480px;">
+      <h2 id="settings-title">Settings</h2>
+      <div class="modal-error" id="settings-error" role="alert"></div>
+
+      <!-- Projects section -->
+      <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">Projects</h3>
+      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+        <input type="text" id="new-project-input" placeholder="New project name" style="flex:1;padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.95rem;" />
+        <button id="btn-add-project" style="white-space:nowrap;">Add Project</button>
+      </div>
+
+      <table class="entry-table" id="projects-table">
+        <thead><tr><th>Project Name</th><th></th></tr></thead>
+        <tbody id="projects-tbody"></tbody>
+      </table>
+
+      <!-- Backup / Restore section -->
+      <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />
+      <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">Backup &amp; Restore</h3>
+
+      <div style="display:flex;flex-direction:column;gap:0.8rem;">
+        <div>
+          <p style="font-size:0.9rem;color:#6b7280;margin-bottom:0.5rem;">
+            Export a full backup of all projects and time entries as a JSON file.
+          </p>
+          <button id="btn-backup" class="secondary" style="width:100%;">⬇ Download Backup</button>
+        </div>
+
+        <div>
+          <p style="font-size:0.9rem;color:#6b7280;margin-bottom:0.5rem;">
+            Restore from a backup file. Existing data is kept — only missing projects and entries are added.
+          </p>
+          <label style="display:block;width:100%;">
+            <input type="file" id="restore-file-input" accept=".json" style="display:none;" />
+            <button id="btn-restore-pick" class="secondary" style="width:100%;" type="button">⬆ Choose Backup File…</button>
+          </label>
+          <div id="restore-status" style="margin-top:0.5rem;font-size:0.9rem;display:none;"></div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-settings-close" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
