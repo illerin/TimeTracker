@@ -9,6 +9,8 @@
  * @returns {string} Rounded time in "HH:MM" format
  */
 function roundToNearest15(timeStr) {
+  if (timeStr === '24:00') return '24:00';
+
   const [hourStr, minStr] = timeStr.split(':');
   let hours = parseInt(hourStr, 10);
   let minutes = parseInt(minStr, 10);

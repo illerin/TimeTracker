@@ -39,27 +39,40 @@ function to12hr(timeStr) {
 }
 
 // ─── Time dropdown helpers ────────────────────────────────────────────────────
-// Hours 07–22. 07–12 = AM (light blue), 13–22 = PM (dark blue).
-// Displayed as 7–12 for AM, 1–10 for PM.
-const HOUR_OPTS = [
-  { value: '07', label: '7',  period: 'am' },
-  { value: '08', label: '8',  period: 'am' },
-  { value: '09', label: '9',  period: 'am' },
-  { value: '10', label: '10', period: 'am' },
-  { value: '11', label: '11', period: 'am' },
-  { value: '12', label: '12', period: 'am' },
-  { value: '13', label: '1',  period: 'pm' },
-  { value: '14', label: '2',  period: 'pm' },
-  { value: '15', label: '3',  period: 'pm' },
-  { value: '16', label: '4',  period: 'pm' },
-  { value: '17', label: '5',  period: 'pm' },
-  { value: '18', label: '6',  period: 'pm' },
-  { value: '19', label: '7',  period: 'pm' },
-  { value: '20', label: '8',  period: 'pm' },
-  { value: '21', label: '9',  period: 'pm' },
-  { value: '22', label: '10', period: 'pm' },
-];
 const MINUTES = ['00', '15', '30', '45'];
+let timeWindow = { start: '07', end: '22' };
+let HOUR_OPTS = buildHourOptions(timeWindow.start, timeWindow.end);
+
+function hourLabel(hour) {
+  if (hour === 24) return '12 AM';
+  const period = hour < 12 ? 'AM' : 'PM';
+  let display = hour % 12;
+  if (display === 0) display = 12;
+  return `${display} ${period}`;
+}
+
+function buildHourOptions(start, end) {
+  const opts = [];
+  for (let hour = Number(start); hour <= Number(end); hour++) {
+    opts.push({
+      value: String(hour).padStart(2, '0'),
+      label: hourLabel(hour),
+      period: hour < 12 || hour === 24 ? 'am' : 'pm'
+    });
+  }
+  return opts;
+}
+
+async function fetchTimeWindow() {
+  try {
+    const res = await fetch('/api/settings/time-window');
+    if (!res.ok) return;
+    timeWindow = await res.json();
+    HOUR_OPTS = buildHourOptions(timeWindow.start, timeWindow.end);
+  } catch (_) {}
+}
+
+fetchTimeWindow();
 
 function buildTimeSelects(cssClass, value, ariaLabel) {
   const [initH, initM] = value ? value.split(':') : ['', ''];
@@ -75,7 +88,18 @@ function buildTimeSelects(cssClass, value, ariaLabel) {
   blankOpt.textContent = 'HH';
   hSel.appendChild(blankOpt);
 
-  for (const opt of HOUR_OPTS) {
+  let hourOpts = cssClass.includes('start')
+    ? HOUR_OPTS.filter(opt => opt.value !== '24')
+    : HOUR_OPTS;
+  if (initH && !hourOpts.some(opt => opt.value === initH)) {
+    hourOpts = [...hourOpts, {
+      value: initH,
+      label: hourLabel(Number(initH)),
+      period: Number(initH) < 12 || Number(initH) === 24 ? 'am' : 'pm'
+    }].sort((a, b) => a.value.localeCompare(b.value));
+  }
+
+  for (const opt of hourOpts) {
     const el = document.createElement('option');
     el.value = opt.value;
     el.textContent = opt.label;
@@ -87,7 +111,7 @@ function buildTimeSelects(cssClass, value, ariaLabel) {
 
   // Style the select itself based on current selection
   function updateHourStyle() {
-    const selected = HOUR_OPTS.find(o => o.value === hSel.value);
+    const selected = hourOpts.find(o => o.value === hSel.value);
     if (selected) {
       hSel.style.background = selected.period === 'am' ? '#bfdbfe' : '#1e40af';
       hSel.style.color       = selected.period === 'am' ? '#1e3a5f' : '#fff';
@@ -169,15 +193,33 @@ function wireStartEndSync(startWrapper, endWrapper) {
 }
 
 // ─── Projects (managed list) ──────────────────────────────────────────────────
-let allProjects = []; // [{ id, name, hidden }] — all projects including hidden
+let allProjects = []; // [{ id, name, hidden, hourly_rate }] — all projects including hidden
+let invoiceProfiles = [];
 
 async function fetchProjects() {
   try {
     const res = await fetch('/api/projects');
-    if (res.ok) allProjects = await res.json();
+    if (res.ok) {
+      const projects = await res.json();
+      allProjects = projects.map(project => typeof project === 'string'
+        ? { id: null, name: project, hidden: 0, hourly_rate: 0 }
+        : {
+            id: project.id,
+            name: project.name || '',
+            hidden: project.hidden || 0,
+            hourly_rate: project.hourly_rate || 0
+          });
+    }
   } catch (_) {}
 }
 fetchProjects();
+
+async function fetchInvoiceProfiles() {
+  try {
+    const res = await fetch('/api/invoice-profiles');
+    if (res.ok) invoiceProfiles = await res.json();
+  } catch (_) {}
+}
 
 // ─── Heat-map calendars ───────────────────────────────────────────────────────
 let dailyTotals   = {};
@@ -420,7 +462,7 @@ overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(
 function wireAutocomplete(input, listEl) {
   input.addEventListener('input', () => {
     const val = input.value.toLowerCase();
-    const matches = allProjects.filter(p => p.name.includes(val) && val.length > 0);
+    const matches = allProjects.filter(p => p.name.toLowerCase().includes(val) && val.length > 0);
     listEl.innerHTML = '';
     if (matches.length > 0) {
       matches.forEach(p => {
@@ -488,11 +530,11 @@ function addModalRow(project = '', startTime = '', endTime = '', description = '
   if (!defaultStart) {
     const existingRows = tbody.querySelectorAll('tr');
     if (existingRows.length === 0) {
-      defaultStart = '09:00';
+      defaultStart = `${timeWindow.start}:00`;
     } else {
       const lastRow     = existingRows[existingRows.length - 1];
       const lastEndWrap = lastRow.querySelector('.end-selects');
-      defaultStart = lastEndWrap ? readTimeSelects(lastEndWrap) : '09:00';
+      defaultStart = lastEndWrap ? readTimeSelects(lastEndWrap) : `${timeWindow.start}:00`;
     }
   }
 
@@ -575,9 +617,7 @@ document.getElementById('btn-modal-done').addEventListener('click', async () => 
     return;
   }
 
-  // Collect and validate all rows
-  const toUpdate = []; // { id, project, start_time, end_time, description }
-  const toInsert = []; // { project, start_time, end_time, description }
+  const entries = [];
 
   for (const row of rows) {
     const project     = row.querySelector('.project-select').value;
@@ -596,59 +636,21 @@ document.getElementById('btn-modal-done').addEventListener('click', async () => 
       return;
     }
 
-    const entryId = row.dataset.entryId ? parseInt(row.dataset.entryId, 10) : null;
-    if (entryId !== null) {
-      toUpdate.push({ id: entryId, project, start_time, end_time, description });
-    } else {
-      toInsert.push({ project, start_time, end_time, description });
-    }
+    entries.push({ project, start_time, end_time, description });
   }
 
-  // IDs that were loaded but are no longer in the table → user removed them
-  const remainingIds = new Set(toUpdate.map(e => e.id));
-  const toDelete = modalLoadedEntryIds.filter(id => !remainingIds.has(id));
-
   try {
-    // 1. Update existing entries
-    for (const entry of toUpdate) {
-      const res = await fetch(`/api/entries/${entry.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project:     entry.project,
-          start_time:  entry.start_time,
-          end_time:    entry.end_time,
-          description: entry.description
-        })
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        showModalError(data.errors
-          ? data.errors.map(e => e.message).join('\n')
-          : (data.message || 'Failed to update an entry.'));
-        return;
-      }
-    }
-
-    // 2. Delete removed entries
-    for (const id of toDelete) {
-      await fetch(`/api/entries/${id}`, { method: 'DELETE' });
-    }
-
-    // 3. Insert new entries
-    if (toInsert.length > 0) {
-      const res = await fetch('/api/workday', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: selectedDate, entries: toInsert })
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        showModalError(data.errors
-          ? data.errors.map(e => e.message).join('\n')
-          : (data.message || 'Failed to save new entries.'));
-        return;
-      }
+    const res = await fetch('/api/workday', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: selectedDate, entries })
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      showModalError(data.errors
+        ? data.errors.map(e => e.message).join('\n')
+        : (data.message || 'Failed to save entries.'));
+      return;
     }
 
     closeModal();
@@ -827,15 +829,257 @@ async function deleteEntry(id, tr, date) {
 }
 
 // ─── Settings Modal ───────────────────────────────────────────────────────────
+// Expenses tab
+const timePanel = document.getElementById('time-panel');
+const expensesPanel = document.getElementById('expenses-panel');
+const expenseError = document.getElementById('expense-error');
+const expenseProjectSelect = document.getElementById('expense-project');
+const expenseReportContainer = document.getElementById('expense-report-container');
+const recurringExpensesContainer = document.getElementById('recurring-expenses-container');
+
+function showExpenseError(msg) {
+  expenseError.textContent = msg;
+  expenseError.classList.add('visible');
+}
+
+function hideExpenseError() {
+  expenseError.textContent = '';
+  expenseError.classList.remove('visible');
+}
+
+function switchTopTab(tab) {
+  const showExpenses = tab === 'expenses';
+  timePanel.style.display = showExpenses ? 'none' : 'flex';
+  expensesPanel.style.display = showExpenses ? 'block' : 'none';
+  document.getElementById('tab-time').classList.toggle('secondary', showExpenses);
+  document.getElementById('tab-expenses').classList.toggle('secondary', !showExpenses);
+  if (showExpenses) initExpensesTab();
+}
+
+document.getElementById('tab-time').addEventListener('click', () => switchTopTab('time'));
+document.getElementById('tab-expenses').addEventListener('click', () => switchTopTab('expenses'));
+
+function setExpenseDefaults() {
+  const todayValue = todayIso();
+  document.getElementById('expense-date').value = todayValue;
+  document.getElementById('expense-report-end').value = todayValue;
+  const start = new Date(today);
+  start.setDate(today.getDate() - 30);
+  document.getElementById('expense-report-start').value = toIso(start.getFullYear(), start.getMonth(), start.getDate());
+}
+
+function fillExpenseProjectSelect() {
+  const visibleProjects = allProjects.filter(project => !project.hidden);
+  expenseProjectSelect.innerHTML = '<option value="">Select project</option>' +
+    visibleProjects.map(project => `<option value="${escHtml(project.name)}">${escHtml(project.name)}</option>`).join('');
+}
+
+async function initExpensesTab() {
+  hideExpenseError();
+  if (!document.getElementById('expense-date').value) setExpenseDefaults();
+  await fetchProjects();
+  fillExpenseProjectSelect();
+  await Promise.all([loadExpenseReport(), loadRecurringExpenses()]);
+}
+
+document.getElementById('btn-save-expense').addEventListener('click', async () => {
+  hideExpenseError();
+  const date = document.getElementById('expense-date').value;
+  const project = expenseProjectSelect.value;
+  const description = document.getElementById('expense-description').value.trim();
+  const amount = document.getElementById('expense-amount').value;
+  const recurring = document.getElementById('expense-recurring').checked;
+  if (!date || !project || amount === '') {
+    showExpenseError('Date, project, and amount are required.');
+    return;
+  }
+  const url = recurring ? '/api/recurring-expenses' : '/api/expenses';
+  const payload = recurring
+    ? {
+        project,
+        description,
+        amount,
+        frequency: document.getElementById('expense-frequency').value,
+        start_date: date,
+        expiration_date: document.getElementById('expense-expiration').value || null
+      }
+    : { date, project, description, amount };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      showExpenseError(data.message || 'Failed to save expense.');
+      return;
+    }
+    document.getElementById('expense-description').value = '';
+    document.getElementById('expense-amount').value = '';
+    document.getElementById('expense-expiration').value = '';
+    await Promise.all([loadExpenseReport(), loadRecurringExpenses()]);
+  } catch (_) {
+    showExpenseError('Network error.');
+  }
+});
+
+document.getElementById('btn-load-expenses').addEventListener('click', () => loadExpenseReport());
+document.getElementById('expense-report-sort').addEventListener('change', () => loadExpenseReport());
+
+async function loadExpenseReport() {
+  const start = document.getElementById('expense-report-start').value;
+  const end = document.getElementById('expense-report-end').value;
+  const sort = document.getElementById('expense-report-sort').value;
+  if (!start || !end) return;
+  expenseReportContainer.innerHTML = '<p class="empty-state">Loading expenses...</p>';
+  try {
+    const res = await fetch(`/api/expenses/report?start=${start}&end=${end}&sort=${sort}`);
+    if (!res.ok) {
+      const data = await res.json();
+      showExpenseError(data.message || 'Failed to load expenses.');
+      return;
+    }
+    const data = await res.json();
+    document.getElementById('expense-report-total').textContent = `Total: $${Number(data.total || 0).toFixed(2)}`;
+    if (data.rows.length === 0) {
+      expenseReportContainer.innerHTML = '<p class="empty-state">No expenses found.</p>';
+      return;
+    }
+    const table = document.createElement('table');
+    table.className = 'entry-table';
+    table.innerHTML = '<thead><tr><th>Date</th><th>Project</th><th>Description</th><th>Amount</th><th>Type</th><th></th></tr></thead><tbody></tbody>';
+    const tbody = table.querySelector('tbody');
+    for (const expense of data.rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escHtml(expense.date)}</td>
+        <td>${escHtml(expense.project)}</td>
+        <td>${escHtml(expense.description || '')}</td>
+        <td>$${Number(expense.amount || 0).toFixed(2)}</td>
+        <td>${expense.recurring_expense_id ? 'Recurring' : 'One-time'}</td>
+        <td><button class="danger small expense-delete-btn" data-id="${expense.id}">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+    expenseReportContainer.innerHTML = '';
+    expenseReportContainer.appendChild(table);
+    expenseReportContainer.querySelectorAll('.expense-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this logged expense?')) return;
+        await fetch(`/api/expenses/${btn.dataset.id}`, { method: 'DELETE' });
+        loadExpenseReport();
+      });
+    });
+  } catch (_) {
+    showExpenseError('Network error.');
+  }
+}
+
+async function loadRecurringExpenses() {
+  try {
+    const res = await fetch('/api/recurring-expenses');
+    if (!res.ok) return;
+    const rules = await res.json();
+    if (rules.length === 0) {
+      recurringExpensesContainer.innerHTML = '<p class="empty-state">No recurring expenses.</p>';
+      return;
+    }
+    const table = document.createElement('table');
+    table.className = 'entry-table';
+    table.innerHTML = '<thead><tr><th>Project</th><th>Description</th><th>Amount</th><th>Frequency</th><th>Start</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody></tbody>';
+    const tbody = table.querySelector('tbody');
+    for (const rule of rules) {
+      const status = rule.stopped ? 'Stopped' : (rule.paused ? 'Paused' : 'Active');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escHtml(rule.project)}</td>
+        <td>${escHtml(rule.description || '')}</td>
+        <td>$${Number(rule.amount || 0).toFixed(2)}</td>
+        <td>${escHtml(rule.frequency)}</td>
+        <td>${escHtml(rule.start_date)}</td>
+        <td>${escHtml(rule.expiration_date || '')}</td>
+        <td>${status}</td>
+        <td>
+          <button class="secondary small recurring-pause-btn" data-id="${rule.id}" data-paused="${rule.paused ? '1' : '0'}">${rule.paused ? 'Resume' : 'Pause'}</button>
+          <button class="danger small recurring-stop-btn" data-id="${rule.id}" ${rule.stopped ? 'disabled' : ''}>Stop</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+    recurringExpensesContainer.innerHTML = '';
+    recurringExpensesContainer.appendChild(table);
+    recurringExpensesContainer.querySelectorAll('.recurring-pause-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const paused = btn.dataset.paused !== '1';
+        await fetch(`/api/recurring-expenses/${btn.dataset.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paused })
+        });
+        await Promise.all([loadRecurringExpenses(), loadExpenseReport()]);
+      });
+    });
+    recurringExpensesContainer.querySelectorAll('.recurring-stop-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Stop this recurring expense? Existing logged expenses stay.')) return;
+        await fetch(`/api/recurring-expenses/${btn.dataset.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stopped: true })
+        });
+        loadRecurringExpenses();
+      });
+    });
+  } catch (_) {
+    recurringExpensesContainer.innerHTML = '<p class="empty-state">Failed to load recurring expenses.</p>';
+  }
+}
+
 const settingsOverlay = document.getElementById('settings-overlay');
 
+function fillTimeWindowSelects() {
+  const startSel = document.getElementById('time-window-start');
+  const endSel = document.getElementById('time-window-end');
+  const startOptions = buildHourOptions('00', '23');
+  const endOptions = buildHourOptions('00', '24');
+
+  startSel.innerHTML = startOptions.map(opt =>
+    `<option value="${opt.value}"${opt.value === timeWindow.start ? ' selected' : ''}>${opt.label}</option>`
+  ).join('');
+  endSel.innerHTML = endOptions.map(opt =>
+    `<option value="${opt.value}"${opt.value === timeWindow.end ? ' selected' : ''}>${opt.label}</option>`
+  ).join('');
+}
+
 document.getElementById('btn-settings').addEventListener('click', async () => {
-  await fetchProjects();
-  renderProjectsList();
+  settingsOverlay.classList.add('open');
+  document.getElementById('projects-tbody').innerHTML =
+    '<tr><td colspan="3" style="color:#6b7280;font-style:italic;">Loading...</td></tr>';
+  document.getElementById('from-profiles-list').innerHTML =
+    '<div style="color:#6b7280;font-size:0.85rem;font-style:italic;">Loading...</div>';
+  document.getElementById('to-profiles-list').innerHTML =
+    '<div style="color:#6b7280;font-size:0.85rem;font-style:italic;">Loading...</div>';
   document.getElementById('new-project-input').value = '';
+  document.getElementById('invoice-profile-label').value = '';
+  document.getElementById('invoice-profile-details').value = '';
+  delete document.getElementById('btn-save-invoice-profile').dataset.editId;
   document.getElementById('settings-error').textContent = '';
   document.getElementById('settings-error').classList.remove('visible');
-  settingsOverlay.classList.add('open');
+  fillTimeWindowSelects();
+
+  try {
+    await Promise.allSettled([
+      fetchProjects(),
+      fetchInvoiceProfiles(),
+      fetchTimeWindow()
+    ]);
+    renderProjectsList();
+    renderInvoiceProfiles();
+    fillTimeWindowSelects();
+  } catch (_) {
+    showSettingsError('Failed to load settings.');
+  }
 });
 
 document.getElementById('btn-settings-close').addEventListener('click', () => {
@@ -856,7 +1100,7 @@ function renderProjectsList() {
   tbody.innerHTML = '';
 
   if (allProjects.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="2" style="color:#6b7280;font-style:italic;">No projects yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#6b7280;font-style:italic;">No projects yet.</td></tr>';
     return;
   }
 
@@ -867,15 +1111,56 @@ function renderProjectsList() {
       const hiddenStyle = project.hidden ? 'color:#9ca3af;text-decoration:line-through;' : '';
       tr.innerHTML = `
         <td style="${hiddenStyle}">${escHtml(project.name)}${project.hidden ? ' <span style="font-size:0.75rem;color:#9ca3af;">(hidden)</span>' : ''}</td>
+        <td style="white-space:nowrap;">$${Number(project.hourly_rate || 0).toFixed(2)}/hr</td>
         <td style="white-space:nowrap;">
+          <button class="secondary small proj-rate-btn" aria-label="Rate ${escHtml(project.name)}">Rate</button>
           <button class="secondary small proj-edit-btn" aria-label="Edit ${escHtml(project.name)}">Edit</button>
           <button class="secondary small proj-hide-btn" aria-label="${project.hidden ? 'Show' : 'Hide'} ${escHtml(project.name)}">${project.hidden ? 'Show' : 'Hide'}</button>
           <button class="danger small proj-delete-btn" aria-label="Delete ${escHtml(project.name)}">Delete</button>
         </td>
       `;
+      tr.querySelector('.proj-rate-btn').addEventListener('click', renderProjRate);
       tr.querySelector('.proj-edit-btn').addEventListener('click', renderProjEdit);
       tr.querySelector('.proj-delete-btn').addEventListener('click', () => deleteProject(project.id, tr));
       tr.querySelector('.proj-hide-btn').addEventListener('click', () => toggleProjectHidden(project));
+    }
+
+    function renderProjRate() {
+      tr.innerHTML = `
+        <td>${escHtml(project.name)}</td>
+        <td><input type="number" min="0" step="0.01" class="proj-rate-input" value="${Number(project.hourly_rate || 0)}" style="width:90px;padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;" /></td>
+        <td>
+          <button class="small proj-rate-save-btn">Save</button>
+          <button class="secondary small proj-rate-cancel-btn">Cancel</button>
+        </td>
+      `;
+      tr.querySelector('.proj-rate-cancel-btn').addEventListener('click', renderProjView);
+      tr.querySelector('.proj-rate-save-btn').addEventListener('click', async () => {
+        if (!project.id) {
+          showSettingsError('Refresh the app before setting rates for this project.');
+          return;
+        }
+
+        const hourly_rate = tr.querySelector('.proj-rate-input').value;
+        try {
+          const res = await fetch(`/api/projects/${project.id}/rate`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hourly_rate })
+          });
+          if (res.ok) {
+            const updated = await res.json();
+            project.hourly_rate = updated.hourly_rate;
+            await fetchProjects();
+            renderProjectsList();
+          } else {
+            const data = await res.json();
+            showSettingsError(data.message || 'Failed to update rate.');
+          }
+        } catch (_) {
+          showSettingsError('Network error.');
+        }
+      });
     }
 
     function renderProjEdit() {
@@ -982,6 +1267,144 @@ document.getElementById('new-project-input').addEventListener('keydown', (e) => 
   if (e.key === 'Enter') document.getElementById('btn-add-project').click();
 });
 
+function renderInvoiceProfiles() {
+  renderInvoiceProfileList('from', document.getElementById('from-profiles-list'));
+  renderInvoiceProfileList('to', document.getElementById('to-profiles-list'));
+}
+
+function renderInvoiceProfileList(kind, containerEl) {
+  const profiles = invoiceProfiles.filter(profile => profile.kind === kind);
+  if (profiles.length === 0) {
+    containerEl.innerHTML = '<div style="color:#6b7280;font-size:0.85rem;font-style:italic;">None saved.</div>';
+    return;
+  }
+  containerEl.innerHTML = profiles.map(profile => `
+    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;margin-bottom:0.35rem;">
+      <button class="secondary small invoice-profile-edit" data-id="${profile.id}" type="button" style="flex:1;text-align:left;">${escHtml(profile.label)}</button>
+      <button class="danger small invoice-profile-delete" data-id="${profile.id}" type="button">Delete</button>
+    </div>
+  `).join('');
+
+  containerEl.querySelectorAll('.invoice-profile-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const profile = invoiceProfiles.find(p => p.id === Number(btn.dataset.id));
+      if (!profile) return;
+      document.getElementById('invoice-profile-kind').value = profile.kind;
+      document.getElementById('invoice-profile-label').value = profile.label;
+      document.getElementById('invoice-profile-details').value = profile.details;
+      document.getElementById('btn-save-invoice-profile').dataset.editId = String(profile.id);
+    });
+  });
+
+  containerEl.querySelectorAll('.invoice-profile-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this invoice profile?')) return;
+      try {
+        const res = await fetch(`/api/invoice-profiles/${btn.dataset.id}`, { method: 'DELETE' });
+        if (res.status === 204) {
+          await fetchInvoiceProfiles();
+          renderInvoiceProfiles();
+        }
+      } catch (_) {
+        showSettingsError('Network error.');
+      }
+    });
+  });
+}
+
+document.getElementById('btn-save-invoice-profile').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-save-invoice-profile');
+  const editId = btn.dataset.editId;
+  const payload = {
+    kind: document.getElementById('invoice-profile-kind').value,
+    label: document.getElementById('invoice-profile-label').value.trim(),
+    details: document.getElementById('invoice-profile-details').value.trim()
+  };
+  if (!payload.label) {
+    showSettingsError('Profile label is required.');
+    return;
+  }
+
+  try {
+    const res = await fetch(editId ? `/api/invoice-profiles/${editId}` : '/api/invoice-profiles', {
+      method: editId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      showSettingsError(data.message || 'Failed to save invoice profile.');
+      return;
+    }
+    delete btn.dataset.editId;
+    document.getElementById('invoice-profile-label').value = '';
+    document.getElementById('invoice-profile-details').value = '';
+    await fetchInvoiceProfiles();
+    renderInvoiceProfiles();
+  } catch (_) {
+    showSettingsError('Network error.');
+  }
+});
+
+document.getElementById('btn-save-time-window').addEventListener('click', async () => {
+  const start = document.getElementById('time-window-start').value;
+  const end = document.getElementById('time-window-end').value;
+  if (Number(start) > Number(end)) {
+    showSettingsError('Earliest time must be before latest time.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/settings/time-window', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start, end })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showSettingsError(data.message || 'Failed to save time window.');
+      return;
+    }
+
+    function renderProjRate() {
+      tr.innerHTML = `
+        <td>${escHtml(project.name)}</td>
+        <td><input type="number" min="0" step="0.01" class="proj-rate-input" value="${Number(project.hourly_rate || 0)}" style="width:90px;padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;" /></td>
+        <td>
+          <button class="small proj-rate-save-btn">Save</button>
+          <button class="secondary small proj-rate-cancel-btn">Cancel</button>
+        </td>
+      `;
+      tr.querySelector('.proj-rate-cancel-btn').addEventListener('click', renderProjView);
+      tr.querySelector('.proj-rate-save-btn').addEventListener('click', async () => {
+        const hourly_rate = tr.querySelector('.proj-rate-input').value;
+        try {
+          const res = await fetch(`/api/projects/${project.id}/rate`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hourly_rate })
+          });
+          if (res.ok) {
+            const updated = await res.json();
+            project.hourly_rate = updated.hourly_rate;
+            await fetchProjects();
+            renderProjectsList();
+          } else {
+            const data = await res.json();
+            showSettingsError(data.message || 'Failed to update rate.');
+          }
+        } catch (_) {
+          showSettingsError('Network error.');
+        }
+      });
+    }
+    timeWindow = data;
+    HOUR_OPTS = buildHourOptions(timeWindow.start, timeWindow.end);
+  } catch (_) {
+    showSettingsError('Network error.');
+  }
+});
+
 // ─── Backup & Restore ─────────────────────────────────────────────────────────
 
 // Download backup — just navigate to the endpoint
@@ -1030,9 +1453,12 @@ document.getElementById('restore-file-input').addEventListener('change', async (
         `✓ ${data.message} ` +
         `Added ${data.projectsAdded} project(s), ` +
         `${data.entriesAdded} entry/entries. ` +
-        `${data.entriesSkipped} skipped (already exist).`;
+        `${data.entriesSkipped} skipped (already exist). ` +
+        `${data.settingsUpdated || 0} setting(s) updated.`;
       // Refresh projects list and heatmap
       await fetchProjects();
+      await fetchTimeWindow();
+      fillTimeWindowSelects();
       renderProjectsList();
       await loadHeatmap();
     } else {

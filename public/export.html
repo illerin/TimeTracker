@@ -31,14 +31,36 @@
     }
     .field { margin-bottom: 1.2rem; }
     .field label { display: block; font-weight: 600; margin-bottom: 0.4rem; font-size: 0.95rem; }
-    .field input[type="date"] {
+    .field input[type="date"], .field input[type="text"], .field select {
       width: 100%;
       padding: 0.45rem 0.6rem;
       border: 1px solid #d1d5db;
       border-radius: 4px;
       font-size: 1rem;
     }
+    .project-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 0.65rem;
+      background: #f9fafb;
+    }
+    .project-list label {
+      display: flex;
+      gap: 0.45rem;
+      align-items: center;
+      font-weight: 400;
+      font-size: 0.95rem;
+    }
 
+    .button-row {
+      display: flex;
+      gap: 0.75rem;
+    }
     button {
       width: 100%;
       padding: 0.65rem;
@@ -79,8 +101,42 @@
       <label for="export-end">End Date</label>
       <input type="date" id="export-end" />
     </div>
+    <div class="field">
+      <label for="invoice-number">Invoice #</label>
+      <input type="text" id="invoice-number" placeholder="230" />
+    </div>
+    <div class="field">
+      <label for="invoice-date">Invoice Date</label>
+      <input type="date" id="invoice-date" />
+    </div>
+    <div class="field">
+      <label for="from-profile">From</label>
+      <select id="from-profile"></select>
+    </div>
+    <div class="field">
+      <label for="to-profile">To</label>
+      <select id="to-profile"></select>
+    </div>
+    <div class="field">
+      <label>Projects</label>
+      <div id="export-projects" class="project-list">
+        <span style="color:#6b7280;font-size:0.9rem;">Loading projects...</span>
+      </div>
+    </div>
+    <div class="field">
+      <label style="display:flex;gap:0.45rem;align-items:center;font-weight:400;">
+        <input type="checkbox" id="include-expenses" />
+        Include expenses
+      </label>
+    </div>
 
-    <button id="btn-export">Export to Excel</button>
+    <div class="button-row">
+      <button id="btn-export-xlsx">Export Excel</button>
+      <button id="btn-export-pdf">Export PDF</button>
+    </div>
+    <div class="button-row">
+      <button id="btn-preview-pdf" type="button">Preview PDF</button>
+    </div>
   </div>
 
   <script src="js/export.js"></script>

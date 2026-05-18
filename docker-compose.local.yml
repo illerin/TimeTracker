@@ -1,0 +1,12 @@
+services:
+  timetracker:
+    build: .
+    image: timetracker:latest
+    container_name: timetracker
+    ports:
+      - "3025:3000"
+    volumes:
+      - timetracker-data:/data
+      
+volumes:
+  timetracker-data:

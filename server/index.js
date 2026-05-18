@@ -10,9 +10,10 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-const entriesRouter  = require('./routes/entries');
+const entriesModule  = require('./routes/entries');
 const projectsRouter = require('./routes/projects');
 const exportRouter   = require('./routes/export');
+const entriesRouter  = entriesModule.router || entriesModule;
 
 app.use('/api', entriesRouter);
 app.use('/api', projectsRouter);

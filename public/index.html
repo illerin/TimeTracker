@@ -265,6 +265,12 @@
     <button id="btn-settings" class="secondary">⚙ Settings</button>
   </div>
 
+  <div class="nav-buttons" style="margin-bottom:1.2rem;">
+    <button id="tab-time" class="small">Time</button>
+    <button id="tab-expenses" class="secondary small">Expenses</button>
+  </div>
+
+  <main id="time-panel" style="width:100%;display:flex;flex-direction:column;align-items:center;">
   <!-- Heat-map calendars -->
   <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
     <button id="heatmap-prev" class="secondary small" aria-label="Previous months">&#8249; Prev</button>
@@ -290,6 +296,36 @@
     <input type="date" id="date-picker" />
     <div id="daily-entries-container"></div>
   </section>
+  </main>
+
+  <main id="expenses-panel" style="display:none;width:100%;max-width:900px;background:#fff;border-radius:8px;padding:1.5rem;box-shadow:0 1px 4px rgba(0,0,0,0.1);margin-bottom:2rem;">
+    <h2 style="font-size:1.2rem;margin-bottom:1rem;">Expenses</h2>
+    <div class="modal-error" id="expense-error" role="alert"></div>
+    <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0.6rem;align-items:end;margin-bottom:0.8rem;">
+      <label style="font-weight:600;font-size:0.9rem;">Date<input type="date" id="expense-date" style="display:block;width:100%;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;" /></label>
+      <label style="font-weight:600;font-size:0.9rem;">Project<select id="expense-project" style="display:block;width:100%;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;"></select></label>
+      <label style="font-weight:600;font-size:0.9rem;">Description<input type="text" id="expense-description" style="display:block;width:100%;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;" /></label>
+      <label style="font-weight:600;font-size:0.9rem;">Amount<input type="number" min="0" step="0.01" id="expense-amount" style="display:block;width:100%;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;" /></label>
+      <button id="btn-save-expense" class="small">Add Expense</button>
+    </div>
+    <div style="display:flex;gap:0.8rem;align-items:end;flex-wrap:wrap;margin-bottom:1rem;">
+      <label style="font-size:0.9rem;"><input type="checkbox" id="expense-recurring" /> Recurring</label>
+      <label style="font-weight:600;font-size:0.9rem;">Frequency<select id="expense-frequency" style="display:block;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;"><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="monthly">Monthly</option></select></label>
+      <label style="font-weight:600;font-size:0.9rem;">Expiration<input type="date" id="expense-expiration" style="display:block;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;" /></label>
+    </div>
+    <hr style="margin:1rem 0;border:none;border-top:1px solid #e5e7eb;" />
+    <div style="display:flex;gap:0.8rem;align-items:end;flex-wrap:wrap;margin-bottom:1rem;">
+      <label style="font-weight:600;font-size:0.9rem;">From<input type="date" id="expense-report-start" style="display:block;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;" /></label>
+      <label style="font-weight:600;font-size:0.9rem;">To<input type="date" id="expense-report-end" style="display:block;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;" /></label>
+      <label style="font-weight:600;font-size:0.9rem;">Sort<select id="expense-report-sort" style="display:block;margin-top:0.25rem;padding:0.35rem;border:1px solid #d1d5db;border-radius:4px;"><option value="date">Date</option><option value="project">Project</option><option value="amount">Amount</option></select></label>
+      <button id="btn-load-expenses" class="secondary small">Load</button>
+      <span id="expense-report-total" style="font-weight:700;"></span>
+    </div>
+    <div id="expense-report-container"></div>
+    <hr style="margin:1.2rem 0;border:none;border-top:1px solid #e5e7eb;" />
+    <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">Recurring Expenses</h3>
+    <div id="recurring-expenses-container"></div>
+  </main>
 
   <!-- Add Workday Modal -->
   <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -337,6 +373,7 @@
   <div class="modal-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="modal" style="max-width:480px;">
       <h2 id="settings-title">Settings</h2>
+      <div style="font-size:0.85rem;color:#6b7280;margin-top:-0.7rem;margin-bottom:1rem;">Software version 0.2.1</div>
       <div class="modal-error" id="settings-error" role="alert"></div>
 
       <!-- Projects section -->
@@ -347,9 +384,47 @@
       </div>
 
       <table class="entry-table" id="projects-table">
-        <thead><tr><th>Project Name</th><th></th></tr></thead>
+        <thead><tr><th>Project Name</th><th>Rate</th><th></th></tr></thead>
         <tbody id="projects-tbody"></tbody>
       </table>
+
+      <!-- Invoice profiles section -->
+      <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />
+      <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">Invoice From / To</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-bottom:1rem;">
+        <div>
+          <label style="font-size:0.85rem;font-weight:600;">From Profiles</label>
+          <div id="from-profiles-list" style="margin-top:0.4rem;"></div>
+        </div>
+        <div>
+          <label style="font-size:0.85rem;font-weight:600;">To Profiles</label>
+          <div id="to-profiles-list" style="margin-top:0.4rem;"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:0.5rem;margin-bottom:0.5rem;">
+        <select id="invoice-profile-kind" style="padding:0.4rem;border:1px solid #d1d5db;border-radius:4px;">
+          <option value="from">From</option>
+          <option value="to">To</option>
+        </select>
+        <input type="text" id="invoice-profile-label" placeholder="Profile label" style="padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;" />
+      </div>
+      <textarea id="invoice-profile-details" placeholder="Name, address, phone, email..." style="width:100%;min-height:80px;padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;font-family:inherit;"></textarea>
+      <button id="btn-save-invoice-profile" class="secondary" style="width:100%;margin-top:0.5rem;">Save Profile</button>
+
+      <!-- Time entry window section -->
+      <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />
+      <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">Time Entry Window</h3>
+      <div style="display:flex;gap:0.8rem;align-items:end;margin-bottom:0.8rem;">
+        <label style="flex:1;font-size:0.9rem;font-weight:600;">
+          Earliest
+          <select id="time-window-start" style="display:block;width:100%;margin-top:0.35rem;padding:0.4rem;border:1px solid #d1d5db;border-radius:4px;"></select>
+        </label>
+        <label style="flex:1;font-size:0.9rem;font-weight:600;">
+          Latest
+          <select id="time-window-end" style="display:block;width:100%;margin-top:0.35rem;padding:0.4rem;border:1px solid #d1d5db;border-radius:4px;"></select>
+        </label>
+        <button id="btn-save-time-window" class="secondary" style="white-space:nowrap;">Save</button>
+      </div>
 
       <!-- Backup / Restore section -->
       <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />

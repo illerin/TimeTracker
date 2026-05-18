@@ -38,13 +38,12 @@ describe('Property 1: Time normalization', () => {
 
 // Feature: time-tracker, Property 4: Project name normalization
 describe('Property 4: Project name normalization', () => {
-  test('result equals result.toLowerCase() and has no leading/trailing whitespace', () => {
+  test('result has no leading/trailing whitespace', () => {
     fc.assert(
       fc.property(
         fc.string(),
         (name) => {
           const result = normalizeProjectName(name);
-          expect(result).toBe(result.toLowerCase());
           expect(result).toBe(result.trim());
         }
       ),
@@ -65,6 +64,7 @@ describe('roundToNearest15 — example cases', () => {
     ['12:15', '12:15'],  // already on boundary
     ['12:30', '12:30'],  // already on boundary
     ['12:45', '12:45'],  // already on boundary
+    ['24:00', '24:00'],  // midnight as an end time
     ['09:01', '09:00'],  // round down
     ['09:14', '09:15'],  // round up
     ['23:45', '23:45'],  // already on boundary
@@ -76,8 +76,8 @@ describe('roundToNearest15 — example cases', () => {
 });
 
 describe('normalizeProjectName — example cases', () => {
-  test('converts to lowercase', () => {
-    expect(normalizeProjectName('ProjectAlpha')).toBe('projectalpha');
+  test('preserves case', () => {
+    expect(normalizeProjectName('ProjectAlpha')).toBe('ProjectAlpha');
   });
 
   test('trims leading whitespace', () => {
@@ -89,7 +89,7 @@ describe('normalizeProjectName — example cases', () => {
   });
 
   test('trims both sides', () => {
-    expect(normalizeProjectName('  Alpha Beta  ')).toBe('alpha beta');
+    expect(normalizeProjectName('  Alpha Beta  ')).toBe('Alpha Beta');
   });
 
   test('empty string stays empty', () => {
