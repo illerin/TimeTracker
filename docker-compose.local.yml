@@ -1,7 +1,6 @@
 services:
   timetracker:
-    build: .
-    image: timetracker:latest
+    image: illerin/timetracker:latest
     container_name: timetracker
     ports:
       - "3025:3000"

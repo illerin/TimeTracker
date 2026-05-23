@@ -371,9 +371,9 @@
 
   <!-- Settings Modal -->
   <div class="modal-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-    <div class="modal" style="max-width:480px;">
+    <div class="modal" style="max-width:760px;">
       <h2 id="settings-title">Settings</h2>
-      <div style="font-size:0.85rem;color:#6b7280;margin-top:-0.7rem;margin-bottom:1rem;">Software version 0.2.1</div>
+      <div style="font-size:0.85rem;color:#6b7280;margin-top:-0.7rem;margin-bottom:1rem;">Software version 0.3.3</div>
       <div class="modal-error" id="settings-error" role="alert"></div>
 
       <!-- Projects section -->
@@ -410,6 +410,42 @@
       </div>
       <textarea id="invoice-profile-details" placeholder="Name, address, phone, email..." style="width:100%;min-height:80px;padding:0.5rem;border:1px solid #d1d5db;border-radius:4px;font-family:inherit;"></textarea>
       <button id="btn-save-invoice-profile" class="secondary" style="width:100%;margin-top:0.5rem;">Save Profile</button>
+
+      <!-- Rates section -->
+      <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />
+      <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">Invoice Rates</h3>
+      <div id="standard-rates-list" style="margin-bottom:0.6rem;"></div>
+      <div style="display:grid;grid-template-columns:1fr 100px auto;gap:0.5rem;">
+        <input type="text" id="standard-rate-label" placeholder="Rate name" style="padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;" />
+        <input type="number" min="0" step="0.01" id="standard-rate-amount" placeholder="Amount" style="padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;" />
+        <button id="btn-save-standard-rate" class="secondary" type="button">Save Rate</button>
+      </div>
+
+      <!-- Signatures section -->
+      <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />
+      <h3 style="font-size:1rem;margin-bottom:0.7rem;color:#374151;">PDF Signatures</h3>
+      <div id="signatures-list" style="margin-bottom:0.6rem;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:0.5rem;">
+        <input type="text" id="signature-label" placeholder="Signature name" style="padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;" />
+        <input type="file" id="signature-file" accept="image/png,image/jpeg,image/webp" style="font-size:0.85rem;" />
+        <button id="btn-save-signature" class="secondary" type="button">Upload</button>
+      </div>
+      <div style="margin-top:0.8rem;">
+        <canvas id="signature-pad" width="700" height="190" style="width:100%;height:190px;border:1px solid #d1d5db;border-radius:4px;background:#fff;touch-action:none;"></canvas>
+        <div style="color:#6b7280;font-size:0.85rem;margin-top:0.35rem;">Draw where you want the signature to appear above the PDF signature line.</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;">
+          <label style="display:flex;gap:0.4rem;align-items:center;color:#374151;font-size:0.85rem;">
+            Ink color
+            <input type="color" id="signature-color" value="#111827" aria-label="Signature ink color" style="width:2.3rem;height:2rem;padding:0;border:1px solid #d1d5db;border-radius:4px;background:#fff;" />
+          </label>
+          <button id="btn-clear-drawn-signature" class="secondary small" type="button">Clear</button>
+          <button id="btn-save-drawn-signature" class="secondary small" type="button">Save Drawn Signature</button>
+        </div>
+      </div>
+      <div style="margin-top:0.8rem;display:grid;grid-template-columns:1fr auto;gap:0.5rem;">
+        <input type="text" id="typed-signature-name" placeholder="Type name for cursive signature" style="padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;" />
+        <button id="btn-save-typed-signature" class="secondary" type="button">Save Typed Signature</button>
+      </div>
 
       <!-- Time entry window section -->
       <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;" />

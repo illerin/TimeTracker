@@ -71,7 +71,7 @@ router.get('/summary', (req, res, next) => {
 // ─── GET /api/export?start=YYYY-MM-DD&end=YYYY-MM-DD ─────────────────────────
 router.get('/export', async (req, res, next) => {
   try {
-    const { start, end, projects, format, fromProfileId, toProfileId, invoiceNumber, invoiceDate, includeExpenses, preview } = req.query;
+    const { start, end, projects, format, fromProfileId, toProfileId, invoiceNumber, invoiceDate, includeExpenses, preview, rateMode: requestedRateMode, standardRateId, signatureId } = req.query;
 
     if (!start || !isValidDate(start)) {
       return res.status(400).json({ message: 'Invalid or missing start date. Expected YYYY-MM-DD.' });
@@ -105,9 +105,20 @@ router.get('/export', async (req, res, next) => {
     const projectRows = db.prepare(
       'SELECT name, hourly_rate FROM projects ORDER BY name'
     ).all();
+    const rateMode = requestedRateMode === 'standard' ? 'standard' : 'project';
+    const standardRate = rateMode === 'standard' && standardRateId
+      ? db.prepare('SELECT id, amount FROM standard_rates WHERE id = ?').get(standardRateId)
+      : null;
+    const signature = wantsPdfRequest(format) && signatureId
+      ? db.prepare('SELECT id, label, mime_type, data_base64, signature_x, signature_y, signature_width, signature_height FROM signatures WHERE id = ?').get(signatureId)
+      : null;
+
     const invoiceProjects = projectRows.filter(project =>
       !selectedProjects || selectedProjects.has(project.name.toLowerCase())
-    );
+    ).map(project => ({
+      ...project,
+      hourly_rate: rateMode === 'standard' ? Number(standardRate?.amount || 0) : Number(project.hourly_rate || 0)
+    }));
 
     const entries = db.prepare(
       'SELECT date, project, start_time, end_time, description FROM time_entries WHERE date >= ? AND date <= ? ORDER BY date, start_time'
@@ -140,6 +151,9 @@ router.get('/export', async (req, res, next) => {
       date: typeof invoiceDate === 'string' && invoiceDate.trim() ? invoiceDate.trim() : new Date().toISOString().slice(0, 10),
       from: fromProfile,
       to: toProfile,
+      signature,
+      rate_mode: rateMode,
+      standard_rate: rateMode === 'standard' ? Number(standardRate?.amount || 0) : null,
       projects: invoiceProjects,
       expenses: expenses
         .filter(expense => !selectedProjects || selectedProjects.has(expense.project.toLowerCase()))
@@ -176,6 +190,10 @@ router.get('/export', async (req, res, next) => {
     next(err);
   }
 });
+
+function wantsPdfRequest(format) {
+  return format === 'pdf';
+}
 
 // ─── GET /api/daily-totals?start=YYYY-MM-DD&end=YYYY-MM-DD ──────────────────
 // Returns { "YYYY-MM-DD": totalHours, ... } for all dates in range that have entries.
@@ -225,6 +243,8 @@ router.get('/backup', (req, res, next) => {
     ).all();
     const settings = db.prepare('SELECT key, value, updated_at FROM settings ORDER BY key').all();
     const invoiceProfiles = db.prepare('SELECT id, kind, label, details, created_at FROM invoice_profiles ORDER BY id').all();
+    const standardRates = db.prepare('SELECT id, label, amount, created_at FROM standard_rates ORDER BY id').all();
+    const signatures = db.prepare('SELECT id, label, mime_type, data_base64, signature_x, signature_y, signature_width, signature_height, created_at FROM signatures ORDER BY id').all();
 
     const backup = {
       version:    1,
@@ -234,7 +254,9 @@ router.get('/backup', (req, res, next) => {
       expenses,
       recurring_expenses: recurringExpenses,
       settings,
-      invoice_profiles: invoiceProfiles
+      invoice_profiles: invoiceProfiles,
+      standard_rates: standardRates,
+      signatures
     };
 
     const filename = `timetracker-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -398,6 +420,47 @@ router.post('/restore', (req, res, next) => {
           const existing = findProfile.get(profile.kind, label);
           if (existing) updateProfile.run(details, existing.id);
           else insertProfile.run(profile.kind, label, details);
+        }
+      }
+
+      if (Array.isArray(backup.standard_rates)) {
+        const findRate = db.prepare('SELECT id FROM standard_rates WHERE label = ? COLLATE NOCASE');
+        const insertRate = db.prepare('INSERT INTO standard_rates (label, amount) VALUES (?, ?)');
+        const updateRate = db.prepare('UPDATE standard_rates SET amount = ? WHERE id = ?');
+        for (const rate of backup.standard_rates) {
+          if (!rate.label || typeof rate.label !== 'string') continue;
+          const label = rate.label.trim();
+          const amount = Number(rate.amount || 0);
+          if (!label || !Number.isFinite(amount) || amount < 0) continue;
+          const existing = findRate.get(label);
+          if (existing) updateRate.run(amount, existing.id);
+          else insertRate.run(label, amount);
+        }
+      }
+
+      if (Array.isArray(backup.signatures)) {
+        const findSignature = db.prepare('SELECT id FROM signatures WHERE label = ? COLLATE NOCASE');
+        const insertSignature = db.prepare(`
+          INSERT INTO signatures (label, mime_type, data_base64, signature_x, signature_y, signature_width, signature_height)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        const updateSignature = db.prepare(`
+          UPDATE signatures
+          SET mime_type = ?, data_base64 = ?, signature_x = ?, signature_y = ?, signature_width = ?, signature_height = ?
+          WHERE id = ?
+        `);
+        for (const sig of backup.signatures) {
+          if (!sig.label || !['image/png', 'image/jpeg', 'image/webp'].includes(sig.mime_type)) continue;
+          if (!sig.data_base64 || typeof sig.data_base64 !== 'string') continue;
+          const label = sig.label.trim();
+          if (!label) continue;
+          const signatureX = Number.isFinite(Number(sig.signature_x)) ? Number(sig.signature_x) : 0;
+          const signatureY = Number.isFinite(Number(sig.signature_y)) ? Number(sig.signature_y) : -62;
+          const signatureWidth = Number.isFinite(Number(sig.signature_width)) && Number(sig.signature_width) > 0 ? Number(sig.signature_width) : 180;
+          const signatureHeight = Number.isFinite(Number(sig.signature_height)) && Number(sig.signature_height) > 0 ? Number(sig.signature_height) : 55;
+          const existing = findSignature.get(label);
+          if (existing) updateSignature.run(sig.mime_type, sig.data_base64, signatureX, signatureY, signatureWidth, signatureHeight, existing.id);
+          else insertSignature.run(label, sig.mime_type, sig.data_base64, signatureX, signatureY, signatureWidth, signatureHeight);
         }
       }
 

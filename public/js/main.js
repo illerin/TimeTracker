@@ -156,6 +156,7 @@ function wireStartEndSync(startWrapper, endWrapper) {
     const startH = startWrapper.querySelector('.hour-sel').value;
     const endHSel = endWrapper.querySelector('.hour-sel');
     const currentEnd = endHSel.value;
+    const shouldAutoSetEnd = startH && !currentEnd;
 
     // Remove all options except blank, then re-add filtered ones
     endHSel.innerHTML = '';
@@ -172,7 +173,7 @@ function wireStartEndSync(startWrapper, endWrapper) {
       el.textContent = opt.label;
       el.style.background = opt.period === 'am' ? '#bfdbfe' : '#1e40af';
       el.style.color       = opt.period === 'am' ? '#1e3a5f' : '#fff';
-      if (opt.value === currentEnd) el.selected = true;
+      if (opt.value === currentEnd || (shouldAutoSetEnd && opt.value === startH)) el.selected = true;
       endHSel.appendChild(el);
     }
 
@@ -195,6 +196,9 @@ function wireStartEndSync(startWrapper, endWrapper) {
 // ─── Projects (managed list) ──────────────────────────────────────────────────
 let allProjects = []; // [{ id, name, hidden, hourly_rate }] — all projects including hidden
 let invoiceProfiles = [];
+let standardRates = [];
+let signatures = [];
+let rateMode = 'project';
 
 async function fetchProjects() {
   try {
@@ -218,6 +222,30 @@ async function fetchInvoiceProfiles() {
   try {
     const res = await fetch('/api/invoice-profiles');
     if (res.ok) invoiceProfiles = await res.json();
+  } catch (_) {}
+}
+
+async function fetchRateMode() {
+  try {
+    const res = await fetch('/api/settings/rate-mode');
+    if (res.ok) {
+      const data = await res.json();
+      rateMode = data.mode || 'project';
+    }
+  } catch (_) {}
+}
+
+async function fetchStandardRates() {
+  try {
+    const res = await fetch('/api/standard-rates');
+    if (res.ok) standardRates = await res.json();
+  } catch (_) {}
+}
+
+async function fetchSignatures() {
+  try {
+    const res = await fetch('/api/signatures');
+    if (res.ok) signatures = await res.json();
   } catch (_) {}
 }
 
@@ -627,16 +655,18 @@ document.getElementById('btn-modal-done').addEventListener('click', async () => 
     const end_time    = readTimeSelects(endWrap);
     const description = row.querySelector('.description-input').value.trim();
 
-    if (!project) {
-      showModalError('All rows must have a project selected.');
-      return;
-    }
+    if (!project) continue;
     if (!start_time || !end_time) {
-      showModalError('All rows must have a start time and end time.');
+      showModalError('Rows with a project must have a start time and end time.');
       return;
     }
 
     entries.push({ project, start_time, end_time, description });
+  }
+
+  if (entries.length === 0) {
+    showModalError('Please add at least one time entry with a project.');
+    return;
   }
 
   try {
@@ -1063,6 +1093,10 @@ document.getElementById('btn-settings').addEventListener('click', async () => {
   document.getElementById('new-project-input').value = '';
   document.getElementById('invoice-profile-label').value = '';
   document.getElementById('invoice-profile-details').value = '';
+  document.getElementById('standard-rate-label').value = '';
+  document.getElementById('standard-rate-amount').value = '';
+  document.getElementById('signature-label').value = '';
+  document.getElementById('signature-file').value = '';
   delete document.getElementById('btn-save-invoice-profile').dataset.editId;
   document.getElementById('settings-error').textContent = '';
   document.getElementById('settings-error').classList.remove('visible');
@@ -1072,10 +1106,15 @@ document.getElementById('btn-settings').addEventListener('click', async () => {
     await Promise.allSettled([
       fetchProjects(),
       fetchInvoiceProfiles(),
+      fetchRateMode(),
+      fetchStandardRates(),
+      fetchSignatures(),
       fetchTimeWindow()
     ]);
     renderProjectsList();
     renderInvoiceProfiles();
+    renderRateSettings();
+    renderSignatures();
     fillTimeWindowSelects();
   } catch (_) {
     showSettingsError('Failed to load settings.');
@@ -1346,6 +1385,302 @@ document.getElementById('btn-save-invoice-profile').addEventListener('click', as
   }
 });
 
+function renderRateSettings() {
+  const container = document.getElementById('standard-rates-list');
+  if (standardRates.length === 0) {
+    container.innerHTML = '<div style="color:#6b7280;font-size:0.85rem;font-style:italic;">No standard rates saved.</div>';
+    return;
+  }
+  container.innerHTML = standardRates.map(rate => `
+    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;margin-bottom:0.35rem;">
+      <span style="font-size:0.9rem;">${escHtml(rate.label)} - $${Number(rate.amount || 0).toFixed(2)}/hr</span>
+      <button class="danger small standard-rate-delete" data-id="${rate.id}" type="button">Delete</button>
+    </div>
+  `).join('');
+  container.querySelectorAll('.standard-rate-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this standard rate?')) return;
+      try {
+        const res = await fetch(`/api/standard-rates/${btn.dataset.id}`, { method: 'DELETE' });
+        if (res.status === 204) {
+          await fetchStandardRates();
+          renderRateSettings();
+        }
+      } catch (_) {
+        showSettingsError('Network error.');
+      }
+    });
+  });
+}
+
+document.getElementById('btn-save-standard-rate').addEventListener('click', async () => {
+  const label = document.getElementById('standard-rate-label').value.trim();
+  const amount = document.getElementById('standard-rate-amount').value;
+  if (!label) {
+    showSettingsError('Rate name is required.');
+    return;
+  }
+  try {
+    const res = await fetch('/api/standard-rates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, amount })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showSettingsError(data.message || 'Failed to save standard rate.');
+      return;
+    }
+    document.getElementById('standard-rate-label').value = '';
+    document.getElementById('standard-rate-amount').value = '';
+    await fetchStandardRates();
+    renderRateSettings();
+  } catch (_) {
+    showSettingsError('Network error.');
+  }
+});
+
+function renderSignatures() {
+  const container = document.getElementById('signatures-list');
+  if (signatures.length === 0) {
+    container.innerHTML = '<div style="color:#6b7280;font-size:0.85rem;font-style:italic;">No signatures saved.</div>';
+    return;
+  }
+  container.innerHTML = signatures.map(sig => `
+    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;margin-bottom:0.35rem;">
+      <span style="font-size:0.9rem;">${escHtml(sig.label)}</span>
+      <button class="danger small signature-delete" data-id="${sig.id}" type="button">Delete</button>
+    </div>
+  `).join('');
+  container.querySelectorAll('.signature-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this signature?')) return;
+      try {
+        const res = await fetch(`/api/signatures/${btn.dataset.id}`, { method: 'DELETE' });
+        if (res.status === 204) {
+          await fetchSignatures();
+          renderSignatures();
+        }
+      } catch (_) {
+        showSettingsError('Network error.');
+      }
+    });
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveSignatureDataUrl(label, dataUrl, placement = null) {
+  const res = await fetch('/api/signatures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label, dataUrl, placement })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    showSettingsError(data.message || 'Failed to save signature.');
+    return false;
+  }
+  await fetchSignatures();
+  renderSignatures();
+  return true;
+}
+
+document.getElementById('btn-save-signature').addEventListener('click', async () => {
+  const label = document.getElementById('signature-label').value.trim();
+  const file = document.getElementById('signature-file').files[0];
+  if (!label || !file) {
+    showSettingsError('Signature name and image are required.');
+    return;
+  }
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    showSettingsError('Signature must be PNG, JPG, or WebP.');
+    return;
+  }
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const saved = await saveSignatureDataUrl(label, dataUrl);
+    if (!saved) return;
+    document.getElementById('signature-label').value = '';
+    document.getElementById('signature-file').value = '';
+  } catch (_) {
+    showSettingsError('Network error.');
+  }
+});
+
+const signaturePad = document.getElementById('signature-pad');
+const signatureCtx = signaturePad.getContext('2d');
+const signatureInkCanvas = document.createElement('canvas');
+signatureInkCanvas.width = signaturePad.width;
+signatureInkCanvas.height = signaturePad.height;
+const signatureInkCtx = signatureInkCanvas.getContext('2d');
+let drawingSignature = false;
+let hasDrawnSignature = false;
+const signaturePadLine = { x: 40, y: 135, width: 250 };
+const signaturePdfScale = 210 / signaturePadLine.width;
+
+function renderSignaturePad() {
+  signatureCtx.fillStyle = '#ffffff';
+  signatureCtx.fillRect(0, 0, signaturePad.width, signaturePad.height);
+  signatureCtx.strokeStyle = '#111827';
+  signatureCtx.lineWidth = 1.5;
+  signatureCtx.beginPath();
+  signatureCtx.moveTo(signaturePadLine.x, signaturePadLine.y);
+  signatureCtx.lineTo(signaturePadLine.x + signaturePadLine.width, signaturePadLine.y);
+  signatureCtx.stroke();
+  signatureCtx.fillStyle = '#6b7280';
+  signatureCtx.font = '13px system-ui, sans-serif';
+  signatureCtx.fillText('Signature', signaturePadLine.x, signaturePadLine.y + 20);
+  signatureCtx.drawImage(signatureInkCanvas, 0, 0);
+}
+
+function resetSignaturePad() {
+  signatureInkCtx.clearRect(0, 0, signatureInkCanvas.width, signatureInkCanvas.height);
+  hasDrawnSignature = false;
+  renderSignaturePad();
+}
+
+function signaturePoint(evt) {
+  const rect = signaturePad.getBoundingClientRect();
+  return {
+    x: ((evt.clientX - rect.left) / rect.width) * signaturePad.width,
+    y: ((evt.clientY - rect.top) / rect.height) * signaturePad.height
+  };
+}
+
+function signatureAssetFromInk(inkCanvas) {
+  const data = inkCanvas.getContext('2d').getImageData(0, 0, inkCanvas.width, inkCanvas.height).data;
+  let left = inkCanvas.width;
+  let top = inkCanvas.height;
+  let right = -1;
+  let bottom = -1;
+
+  for (let y = 0; y < inkCanvas.height; y += 1) {
+    for (let x = 0; x < inkCanvas.width; x += 1) {
+      if (data[((y * inkCanvas.width) + x) * 4 + 3] === 0) continue;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+
+  if (right < left || bottom < top) return null;
+
+  const padding = 3;
+  left = Math.max(0, left - padding);
+  top = Math.max(0, top - padding);
+  right = Math.min(inkCanvas.width - 1, right + padding);
+  bottom = Math.min(inkCanvas.height - 1, bottom + padding);
+  const width = right - left + 1;
+  const height = bottom - top + 1;
+  const cropped = document.createElement('canvas');
+  cropped.width = width;
+  cropped.height = height;
+  cropped.getContext('2d').drawImage(inkCanvas, left, top, width, height, 0, 0, width, height);
+
+  return {
+    dataUrl: cropped.toDataURL('image/png'),
+    placement: {
+      x: Math.round((left - signaturePadLine.x) * signaturePdfScale),
+      y: Math.round((top - signaturePadLine.y) * signaturePdfScale),
+      width: Math.round(width * signaturePdfScale),
+      height: Math.round(height * signaturePdfScale)
+    }
+  };
+}
+
+signaturePad.addEventListener('pointerdown', (evt) => {
+  drawingSignature = true;
+  hasDrawnSignature = true;
+  signaturePad.setPointerCapture(evt.pointerId);
+  const pt = signaturePoint(evt);
+  signatureInkCtx.strokeStyle = document.getElementById('signature-color').value;
+  signatureInkCtx.lineWidth = 2;
+  signatureInkCtx.lineCap = 'round';
+  signatureInkCtx.lineJoin = 'round';
+  signatureInkCtx.beginPath();
+  signatureInkCtx.moveTo(pt.x, pt.y);
+});
+
+signaturePad.addEventListener('pointermove', (evt) => {
+  if (!drawingSignature) return;
+  const pt = signaturePoint(evt);
+  signatureInkCtx.lineTo(pt.x, pt.y);
+  signatureInkCtx.stroke();
+  renderSignaturePad();
+});
+
+signaturePad.addEventListener('pointerup', () => {
+  drawingSignature = false;
+});
+
+signaturePad.addEventListener('pointercancel', () => {
+  drawingSignature = false;
+});
+
+document.getElementById('btn-clear-drawn-signature').addEventListener('click', resetSignaturePad);
+
+document.getElementById('btn-save-drawn-signature').addEventListener('click', async () => {
+  const label = document.getElementById('signature-label').value.trim();
+  if (!label) {
+    showSettingsError('Signature name is required.');
+    return;
+  }
+  if (!hasDrawnSignature) {
+    showSettingsError('Draw a signature first.');
+    return;
+  }
+  try {
+    const asset = signatureAssetFromInk(signatureInkCanvas);
+    if (!asset) {
+      showSettingsError('Draw a signature first.');
+      return;
+    }
+    const saved = await saveSignatureDataUrl(label, asset.dataUrl, asset.placement);
+    if (!saved) return;
+    document.getElementById('signature-label').value = '';
+    resetSignaturePad();
+  } catch (_) {
+    showSettingsError('Network error.');
+  }
+});
+
+document.getElementById('btn-save-typed-signature').addEventListener('click', async () => {
+  const typedName = document.getElementById('typed-signature-name').value.trim();
+  const label = document.getElementById('signature-label').value.trim() || typedName;
+  if (!typedName) {
+    showSettingsError('Type a name first.');
+    return;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 700;
+  canvas.height = 190;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = document.getElementById('signature-color').value;
+  ctx.font = '48px "Brush Script MT", "Segoe Script", cursive';
+  ctx.fillText(typedName, signaturePadLine.x + 6, signaturePadLine.y - 18);
+  const asset = signatureAssetFromInk(canvas);
+
+  try {
+    const saved = await saveSignatureDataUrl(label, asset.dataUrl, asset.placement);
+    if (!saved) return;
+    document.getElementById('signature-label').value = '';
+    document.getElementById('typed-signature-name').value = '';
+  } catch (_) {
+    showSettingsError('Network error.');
+  }
+});
+
+resetSignaturePad();
+
 document.getElementById('btn-save-time-window').addEventListener('click', async () => {
   const start = document.getElementById('time-window-start').value;
   const end = document.getElementById('time-window-end').value;
@@ -1456,10 +1791,19 @@ document.getElementById('restore-file-input').addEventListener('change', async (
         `${data.entriesSkipped} skipped (already exist). ` +
         `${data.settingsUpdated || 0} setting(s) updated.`;
       // Refresh projects list and heatmap
-      await fetchProjects();
-      await fetchTimeWindow();
+      await Promise.all([
+        fetchProjects(),
+        fetchInvoiceProfiles(),
+        fetchRateMode(),
+        fetchStandardRates(),
+        fetchSignatures(),
+        fetchTimeWindow()
+      ]);
       fillTimeWindowSelects();
       renderProjectsList();
+      renderInvoiceProfiles();
+      renderRateSettings();
+      renderSignatures();
       await loadHeatmap();
     } else {
       statusEl.style.color = '#dc2626';

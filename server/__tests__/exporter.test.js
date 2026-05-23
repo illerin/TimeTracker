@@ -44,6 +44,29 @@ describe('invoice exporters', () => {
     expect(rows).toContainEqual(['2026-01-02', 'beta', 'Materials', 12.5]);
     expect(rows).toContainEqual(['TOTAL EXPENSES', 12.5]);
     expect(rows).toContainEqual(['GRAND TOTAL THIS PERIOD', 175]);
+    expect(rows).toContainEqual(['SIGNATURE', '____________________________']);
+  });
+
+  test('xlsx omits grand total when there are no expenses', async () => {
+    const rows = await parseXlsx(await generateInvoiceXlsx({ ...invoice, expenses: [] }));
+    expect(rows).toContainEqual(['TOTAL FEE THIS PERIOD', 162.5]);
+    expect(rows).not.toContainEqual(['GRAND TOTAL THIS PERIOD', 162.5]);
+  });
+
+  test('xlsx shows standard rate only in the bottom summary', async () => {
+    const standardInvoice = {
+      ...invoice,
+      rate_mode: 'standard',
+      standard_rate: 60,
+      projects: invoice.projects.map(project => ({ ...project, hourly_rate: 60 }))
+    };
+    const rows = await parseXlsx(await generateInvoiceXlsx(standardInvoice));
+
+    expect(rows).toContainEqual(['TOTAL HOURS BY PROJECT', '', 2.5, 1]);
+    expect(rows).not.toContainEqual(['RATE', '', 60, 60]);
+    expect(rows).not.toContainEqual(['TOTAL FEE', '', 150, 60]);
+    expect(rows).toContainEqual(['RATE', 60]);
+    expect(rows).toContainEqual(['TOTAL FEE THIS PERIOD', 210]);
   });
 
   test('pdf returns a PDF buffer', async () => {

@@ -19,6 +19,28 @@ function parseRate(value) {
   return Number.isFinite(rate) && rate >= 0 ? rate : null;
 }
 
+function cleanStandardRate(body) {
+  const label = typeof body.label === 'string' ? body.label.trim() : '';
+  const amount = parseRate(body.amount);
+  if (!label) return { error: 'label is required.' };
+  if (amount === null) return { error: 'amount must be a non-negative number.' };
+  return { label, amount };
+}
+
+function cleanSignature(body) {
+  const label = typeof body.label === 'string' ? body.label.trim() : '';
+  const dataUrl = typeof body.dataUrl === 'string' ? body.dataUrl.trim() : '';
+  const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!label) return { error: 'label is required.' };
+  if (!match) return { error: 'signature must be a PNG, JPG, or WebP image.' };
+  const placement = body.placement && typeof body.placement === 'object' ? body.placement : {};
+  const signature_x = Number.isFinite(Number(placement.x)) ? Number(placement.x) : 0;
+  const signature_y = Number.isFinite(Number(placement.y)) ? Number(placement.y) : -62;
+  const signature_width = Number.isFinite(Number(placement.width)) && Number(placement.width) > 0 ? Number(placement.width) : 180;
+  const signature_height = Number.isFinite(Number(placement.height)) && Number(placement.height) > 0 ? Number(placement.height) : 55;
+  return { label, mime_type: match[1], data_base64: match[2], signature_x, signature_y, signature_width, signature_height };
+}
+
 function cleanProfile(body) {
   const kind = typeof body.kind === 'string' ? body.kind.trim().toLowerCase() : '';
   const label = typeof body.label === 'string' ? body.label.trim() : '';
@@ -223,6 +245,133 @@ router.delete('/invoice-profiles/:id', (req, res, next) => {
     const db = getDb();
     const result = db.prepare('DELETE FROM invoice_profiles WHERE id = ?').run(id);
     if (result.changes === 0) return res.status(404).json({ message: 'Profile not found.' });
+    return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/settings/rate-mode', (req, res, next) => {
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'rate_mode'").get();
+    const mode = row && ['project', 'standard'].includes(row.value) ? row.value : 'project';
+    return res.status(200).json({ mode });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/settings/rate-mode', (req, res, next) => {
+  try {
+    const mode = typeof req.body.mode === 'string' ? req.body.mode : '';
+    if (!['project', 'standard'].includes(mode)) {
+      return res.status(400).json({ message: 'mode must be project or standard.' });
+    }
+
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('rate_mode', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+    `).run(mode);
+    return res.status(200).json({ mode });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/standard-rates', (req, res, next) => {
+  try {
+    const rows = getDb().prepare('SELECT id, label, amount FROM standard_rates ORDER BY label').all();
+    return res.status(200).json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/standard-rates', (req, res, next) => {
+  try {
+    const rate = cleanStandardRate(req.body);
+    if (rate.error) return res.status(400).json({ message: rate.error });
+
+    const db = getDb();
+    const result = db.prepare('INSERT INTO standard_rates (label, amount) VALUES (?, ?)').run(rate.label, rate.amount);
+    const created = db.prepare('SELECT id, label, amount FROM standard_rates WHERE id = ?').get(result.lastInsertRowid);
+    return res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/standard-rates/:id', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ message: 'Invalid rate id.' });
+    const rate = cleanStandardRate(req.body);
+    if (rate.error) return res.status(400).json({ message: rate.error });
+
+    const db = getDb();
+    const result = db.prepare('UPDATE standard_rates SET label = ?, amount = ? WHERE id = ?').run(rate.label, rate.amount, id);
+    if (result.changes === 0) return res.status(404).json({ message: 'Standard rate not found.' });
+    const updated = db.prepare('SELECT id, label, amount FROM standard_rates WHERE id = ?').get(id);
+    return res.status(200).json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/standard-rates/:id', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ message: 'Invalid rate id.' });
+    const result = getDb().prepare('DELETE FROM standard_rates WHERE id = ?').run(id);
+    if (result.changes === 0) return res.status(404).json({ message: 'Standard rate not found.' });
+    return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/signatures', (req, res, next) => {
+  try {
+    const rows = getDb().prepare('SELECT id, label, mime_type, signature_x, signature_y, signature_width, signature_height FROM signatures ORDER BY label').all();
+    return res.status(200).json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/signatures', (req, res, next) => {
+  try {
+    const signature = cleanSignature(req.body);
+    if (signature.error) return res.status(400).json({ message: signature.error });
+
+    const db = getDb();
+    const result = db.prepare(
+      'INSERT INTO signatures (label, mime_type, data_base64, signature_x, signature_y, signature_width, signature_height) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      signature.label,
+      signature.mime_type,
+      signature.data_base64,
+      signature.signature_x,
+      signature.signature_y,
+      signature.signature_width,
+      signature.signature_height
+    );
+    const created = db.prepare('SELECT id, label, mime_type, signature_x, signature_y, signature_width, signature_height FROM signatures WHERE id = ?').get(result.lastInsertRowid);
+    return res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/signatures/:id', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ message: 'Invalid signature id.' });
+    const result = getDb().prepare('DELETE FROM signatures WHERE id = ?').run(id);
+    if (result.changes === 0) return res.status(404).json({ message: 'Signature not found.' });
     return res.status(204).send();
   } catch (err) {
     next(err);

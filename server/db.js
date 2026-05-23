@@ -93,6 +93,25 @@ function initSchema() {
       details    TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS standard_rates (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      label       TEXT NOT NULL,
+      amount      REAL NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS signatures (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      label       TEXT NOT NULL,
+      mime_type   TEXT NOT NULL,
+      data_base64 TEXT NOT NULL,
+      signature_x REAL NOT NULL DEFAULT 0,
+      signature_y REAL NOT NULL DEFAULT -62,
+      signature_width REAL NOT NULL DEFAULT 180,
+      signature_height REAL NOT NULL DEFAULT 55,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Add description column if it doesn't exist yet (migration for existing DBs)
@@ -121,11 +140,26 @@ function initSchema() {
     db.exec("ALTER TABLE projects ADD COLUMN hourly_rate REAL NOT NULL DEFAULT 0");
   }
 
+  const signatureCols = db.prepare("PRAGMA table_info(signatures)").all();
+  if (!signatureCols.some(c => c.name === 'signature_x')) {
+    db.exec("ALTER TABLE signatures ADD COLUMN signature_x REAL NOT NULL DEFAULT 0");
+  }
+  if (!signatureCols.some(c => c.name === 'signature_y')) {
+    db.exec("ALTER TABLE signatures ADD COLUMN signature_y REAL NOT NULL DEFAULT -62");
+  }
+  if (!signatureCols.some(c => c.name === 'signature_width')) {
+    db.exec("ALTER TABLE signatures ADD COLUMN signature_width REAL NOT NULL DEFAULT 180");
+  }
+  if (!signatureCols.some(c => c.name === 'signature_height')) {
+    db.exec("ALTER TABLE signatures ADD COLUMN signature_height REAL NOT NULL DEFAULT 55");
+  }
+
   const insertSetting = db.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
   );
   insertSetting.run('time_window_start', '07');
   insertSetting.run('time_window_end', '22');
+  insertSetting.run('rate_mode', 'project');
 }
 
 // Initialise schema on module load

@@ -118,7 +118,29 @@
       <select id="to-profile"></select>
     </div>
     <div class="field">
+      <label>Rate Mode</label>
+      <div style="display:flex;gap:1rem;align-items:center;font-size:0.95rem;">
+        <label style="display:flex;gap:0.35rem;align-items:center;font-weight:400;margin:0;">
+          <input type="radio" name="export-rate-mode" value="project" checked />
+          By project
+        </label>
+        <label style="display:flex;gap:0.35rem;align-items:center;font-weight:400;margin:0;">
+          <input type="radio" name="export-rate-mode" value="standard" />
+          Standard rate
+        </label>
+      </div>
+    </div>
+    <div class="field" id="standard-rate-field" style="display:none;">
+      <label for="standard-rate">Standard Rate</label>
+      <select id="standard-rate"></select>
+    </div>
+    <div class="field">
+      <label for="signature-select">PDF Signature</label>
+      <select id="signature-select"></select>
+    </div>
+    <div class="field">
       <label>Projects</label>
+      <div style="color:#6b7280;font-size:0.85rem;margin-bottom:0.4rem;">Hours update from the selected date range.</div>
       <div id="export-projects" class="project-list">
         <span style="color:#6b7280;font-size:0.9rem;">Loading projects...</span>
       </div>

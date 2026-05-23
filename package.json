@@ -1,6 +1,6 @@
 {
   "name": "time-tracker",
-  "version": "1.0.0",
+  "version": "0.3.3",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

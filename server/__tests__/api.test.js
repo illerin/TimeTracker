@@ -19,11 +19,16 @@ function resetDb() {
   db.prepare('DELETE FROM recurring_expenses').run();
   db.prepare('DELETE FROM projects').run();
   db.prepare('DELETE FROM invoice_profiles').run();
+  db.prepare('DELETE FROM standard_rates').run();
+  db.prepare('DELETE FROM signatures').run();
   db.prepare("DELETE FROM sqlite_sequence WHERE name='time_entries'").run();
   db.prepare("DELETE FROM sqlite_sequence WHERE name='expenses'").run();
   db.prepare("DELETE FROM sqlite_sequence WHERE name='recurring_expenses'").run();
   db.prepare("DELETE FROM sqlite_sequence WHERE name='projects'").run();
   db.prepare("DELETE FROM sqlite_sequence WHERE name='invoice_profiles'").run();
+  db.prepare("DELETE FROM sqlite_sequence WHERE name='standard_rates'").run();
+  db.prepare("DELETE FROM sqlite_sequence WHERE name='signatures'").run();
+  db.prepare("UPDATE settings SET value = 'project' WHERE key = 'rate_mode'").run();
 }
 
 async function createProject(name) {
@@ -206,6 +211,30 @@ describe('API contracts', () => {
     expect(rows).toContainEqual(['2026-01-15', 'A', 1]);
   });
 
+  test('GET /api/export can use a selected standard rate', async () => {
+    await createProject('alpha');
+    await request(app).put('/api/settings/rate-mode').send({ mode: 'standard' });
+    const rate = await request(app).post('/api/standard-rates').send({ label: 'Shop Rate', amount: 95 });
+    await insertWorkday('2026-01-15', [
+      { project: 'alpha', start_time: '09:00', end_time: '11:00', description: 'A' }
+    ]);
+
+    const res = await request(app)
+      .get(`/api/export?start=2026-01-15&end=2026-01-15&projects=alpha&rateMode=standard&standardRateId=${rate.body.id}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+
+    expect(res.status).toBe(200);
+    const rows = await parseXlsx(res.body);
+    expect(rows).not.toContainEqual(['RATE', '', 95]);
+    expect(rows).toContainEqual(['RATE', 95]);
+    expect(rows).toContainEqual(['TOTAL FEE THIS PERIOD', 190]);
+  });
+
   test('GET /api/export can preview invoice pdf inline', async () => {
     await createProject('alpha');
     const from = await createProfile('from', 'My Business');
@@ -301,19 +330,49 @@ describe('API contracts', () => {
     expect(expenseRows).toContainEqual(['TOTAL EXPENSES', 30]);
   });
 
-  test('backup includes hidden project state', async () => {
+  test('backup includes all user saved data', async () => {
     const created = await createProject('alpha');
     await request(app).patch(`/api/projects/${created.body.id}/hidden`).send({ hidden: true });
+    await createProfile('from', 'My Business');
+    await createProfile('to', 'Client');
+    await request(app).put('/api/settings/time-window').send({ start: '06', end: '23' });
+    await request(app).put('/api/settings/rate-mode').send({ mode: 'standard' });
+    await request(app).post('/api/standard-rates').send({ label: 'Shop Rate', amount: 95 });
+    await request(app).post('/api/signatures').send({
+      label: 'Default',
+      dataUrl: 'data:image/png;base64,iVBORw0KGgo='
+    });
 
     const res = await request(app).get('/api/backup');
     expect(res.status).toBe(200);
 
     const backup = JSON.parse(res.text);
     expect(backup.projects[0]).toMatchObject({ name: 'alpha', hidden: 1, hourly_rate: 0 });
-    expect(Array.isArray(backup.settings)).toBe(true);
-    expect(Array.isArray(backup.invoice_profiles)).toBe(true);
     expect(Array.isArray(backup.expenses)).toBe(true);
     expect(Array.isArray(backup.recurring_expenses)).toBe(true);
+    expect(backup.settings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'time_window_start', value: '06' }),
+      expect.objectContaining({ key: 'time_window_end', value: '23' }),
+      expect.objectContaining({ key: 'rate_mode', value: 'standard' })
+    ]));
+    expect(backup.invoice_profiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'from', label: 'My Business' }),
+      expect.objectContaining({ kind: 'to', label: 'Client' })
+    ]));
+    expect(backup.standard_rates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Shop Rate', amount: 95 })
+    ]));
+    expect(backup.signatures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'Default',
+        mime_type: 'image/png',
+        data_base64: 'iVBORw0KGgo=',
+        signature_x: 0,
+        signature_y: -62,
+        signature_width: 180,
+        signature_height: 55
+      })
+    ]));
   });
 
   test('expense CRUD requires existing projects', async () => {
@@ -357,5 +416,32 @@ describe('API contracts', () => {
 
     const read = await request(app).get('/api/settings/time-window');
     expect(read.body).toEqual({ start: '00', end: '24' });
+  });
+
+  test('rate settings and signatures can be saved', async () => {
+    const mode = await request(app).put('/api/settings/rate-mode').send({ mode: 'standard' });
+    expect(mode.status).toBe(200);
+
+    const rate = await request(app).post('/api/standard-rates').send({ label: 'Field Rate', amount: 80 });
+    expect(rate.status).toBe(201);
+
+    const sig = await request(app).post('/api/signatures').send({
+      label: 'Default',
+      dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+      placement: { x: 12, y: -70, width: 190, height: 60 }
+    });
+    expect(sig.status).toBe(201);
+
+    const rates = await request(app).get('/api/standard-rates');
+    const signatures = await request(app).get('/api/signatures');
+    expect(rates.body[0]).toMatchObject({ label: 'Field Rate', amount: 80 });
+    expect(signatures.body[0]).toMatchObject({
+      label: 'Default',
+      mime_type: 'image/png',
+      signature_x: 12,
+      signature_y: -70,
+      signature_width: 190,
+      signature_height: 60
+    });
   });
 });

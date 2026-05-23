@@ -45,6 +45,19 @@ function invoiceGrandTotal(invoice) {
   return invoiceTotalFee(invoice) + invoiceExpenseTotal(invoice);
 }
 
+function shouldShowGrandTotal(invoice) {
+  return invoiceTotalFee(invoice) > 0 && invoiceExpenseTotal(invoice) > 0;
+}
+
+function usesStandardRate(invoice) {
+  return invoice.rate_mode === 'standard';
+}
+
+function invoiceRate(invoice) {
+  if (Number.isFinite(Number(invoice.standard_rate))) return Number(invoice.standard_rate);
+  return Number(invoice.projects?.[0]?.hourly_rate || 0);
+}
+
 function addMetaRows(sheet, invoice) {
   sheet.addRow(['INVOICE #: ', invoice.number || '']);
   sheet.addRow(['DATE:', invoice.date || '']);
@@ -74,8 +87,10 @@ async function generateInvoiceXlsx(invoice) {
 
   sheet.addRow([]);
   sheet.addRow(['TOTAL HOURS BY PROJECT', '', ...invoice.projects.map(p => projectTotal(invoice, p.name))]);
-  sheet.addRow(['RATE', '', ...invoice.projects.map(p => Number(p.hourly_rate || 0))]);
-  sheet.addRow(['TOTAL FEE', '', ...invoice.projects.map(p => projectTotal(invoice, p.name) * Number(p.hourly_rate || 0))]);
+  if (!usesStandardRate(invoice)) {
+    sheet.addRow(['RATE', '', ...invoice.projects.map(p => Number(p.hourly_rate || 0))]);
+    sheet.addRow(['TOTAL FEE', '', ...invoice.projects.map(p => projectTotal(invoice, p.name) * Number(p.hourly_rate || 0))]);
+  }
   if ((invoice.expenses || []).length > 0) {
     sheet.addRow([]);
     sheet.addRow(['EXPENSES']);
@@ -87,8 +102,15 @@ async function generateInvoiceXlsx(invoice) {
   }
   sheet.addRow([]);
   sheet.addRow(['TOTAL HOURS THIS PERIOD', invoiceTotalHours(invoice)]);
+  if (usesStandardRate(invoice)) {
+    sheet.addRow(['RATE', invoiceRate(invoice)]);
+  }
   sheet.addRow(['TOTAL FEE THIS PERIOD', invoiceTotalFee(invoice)]);
-  sheet.addRow(['GRAND TOTAL THIS PERIOD', invoiceGrandTotal(invoice)]);
+  if (shouldShowGrandTotal(invoice)) {
+    sheet.addRow(['GRAND TOTAL THIS PERIOD', invoiceGrandTotal(invoice)]);
+  }
+  sheet.addRow([]);
+  sheet.addRow(['SIGNATURE', '____________________________']);
 
   sheet.columns.forEach((col, idx) => {
     col.width = idx === 1 ? 34 : 16;
@@ -120,6 +142,15 @@ function drawTextBlock(doc, label, profile, x, y) {
     lineY += 12;
   }
   return lineY;
+}
+
+function signatureBuffer(signature) {
+  if (!signature?.data_base64) return null;
+  try {
+    return Buffer.from(signature.data_base64, 'base64');
+  } catch (_) {
+    return null;
+  }
 }
 
 function generateInvoicePdf(invoice) {
@@ -177,8 +208,10 @@ function generateInvoicePdf(invoice) {
 
     y += 10;
     drawRow(['', 'TOTAL HOURS BY PROJECT', ...invoice.projects.map(p => hours(projectTotal(invoice, p.name)))], true);
-    drawRow(['', 'RATE', ...invoice.projects.map(p => money(p.hourly_rate))], true);
-    drawRow(['', 'TOTAL FEE', ...invoice.projects.map(p => money(projectTotal(invoice, p.name) * Number(p.hourly_rate || 0)))], true);
+    if (!usesStandardRate(invoice)) {
+      drawRow(['', 'RATE', ...invoice.projects.map(p => money(p.hourly_rate))], true);
+      drawRow(['', 'TOTAL FEE', ...invoice.projects.map(p => money(projectTotal(invoice, p.name) * Number(p.hourly_rate || 0)))], true);
+    }
 
     if ((invoice.expenses || []).length > 0) {
       y += 16;
@@ -204,11 +237,39 @@ function generateInvoicePdf(invoice) {
     }
 
     y += 16;
-    doc.font('Helvetica-Bold').fontSize(10).text(`TOTAL HOURS THIS PERIOD ${hours(invoiceTotalHours(invoice))}`, 50, y);
-    y += 16;
-    doc.text(`TOTAL FEE THIS PERIOD ${money(invoiceTotalFee(invoice))}`, 50, y);
-    y += 16;
-    doc.text(`GRAND TOTAL THIS PERIOD ${money(invoiceGrandTotal(invoice))}`, 50, y);
+    const summaryLabelX = 300;
+    const summaryValueX = 455;
+    function drawSummary(label, value) {
+      doc.font('Helvetica-Bold').fontSize(10).text(label, summaryLabelX, y, { width: 150, align: 'right' });
+      doc.text(value, summaryValueX, y, { width: 80, align: 'right' });
+      y += 16;
+    }
+    drawSummary('TOTAL HOURS THIS PERIOD', hours(invoiceTotalHours(invoice)));
+    if (usesStandardRate(invoice)) {
+      drawSummary('RATE', money(invoiceRate(invoice)));
+    }
+    drawSummary('TOTAL FEE THIS PERIOD', money(invoiceTotalFee(invoice)));
+    if (shouldShowGrandTotal(invoice)) {
+      drawSummary('GRAND TOTAL THIS PERIOD', money(invoiceGrandTotal(invoice)));
+    }
+
+    y += 26;
+    if (y > 690) {
+      doc.addPage();
+      y = 80;
+    }
+    const sig = signatureBuffer(invoice.signature);
+    if (sig) {
+      try {
+        const sigX = Number.isFinite(Number(invoice.signature.signature_x)) ? Number(invoice.signature.signature_x) : 0;
+        const sigY = Number.isFinite(Number(invoice.signature.signature_y)) ? Number(invoice.signature.signature_y) : -62;
+        const sigW = Number.isFinite(Number(invoice.signature.signature_width)) ? Number(invoice.signature.signature_width) : 180;
+        const sigH = Number.isFinite(Number(invoice.signature.signature_height)) ? Number(invoice.signature.signature_height) : 55;
+        doc.image(sig, 50 + sigX, y + 34 + sigY, { fit: [sigW, sigH] });
+      } catch (_) {}
+    }
+    doc.moveTo(50, y + 34).lineTo(260, y + 34).stroke();
+    doc.font('Helvetica').fontSize(9).text('Signature', 50, y + 39);
 
     doc.end();
   });
