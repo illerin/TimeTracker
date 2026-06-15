@@ -15,6 +15,10 @@ function hours(value) {
   return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
+function timeCell(value) {
+  return Number(value || 0) === 0 ? '' : value;
+}
+
 function profileLines(profile) {
   if (!profile) return [];
   return String(profile.details || '')
@@ -81,7 +85,7 @@ async function generateInvoiceXlsx(invoice) {
     sheet.addRow([
       line.date,
       line.description,
-      ...invoice.projects.map(project => line.hoursByProject[project.name] || 0)
+      ...invoice.projects.map(project => timeCell(line.hoursByProject[project.name]))
     ]);
   }
 
@@ -202,7 +206,10 @@ function generateInvoicePdf(invoice) {
       drawRow([
         line.date,
         line.description,
-        ...invoice.projects.map(project => hours(line.hoursByProject[project.name] || 0))
+        ...invoice.projects.map(project => {
+          const value = timeCell(line.hoursByProject[project.name]);
+          return value === '' ? '' : hours(value);
+        })
       ]);
     }
 

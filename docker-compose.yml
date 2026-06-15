@@ -3,6 +3,7 @@ services:
     build: .
     image: timetracker:latest
     container_name: timetracker
+    restart: unless-stopped
     ports:
       - "3025:3000"
     volumes:

@@ -7,6 +7,6 @@ services:
       - "3025:3000"
     volumes:
       - timetracker-data:/data
-      
+
 volumes:
   timetracker-data:

@@ -1,18 +1,28 @@
 # TimeTracker
 
-Simple time tracking app with a Docker Compose YAML for quick setup.
+Simple time tracking app packaged as a Docker image.
 
-## Quick Setup
+## Automatic Image Builds
 
-1. Install Docker Desktop.
-2. Create a file named `docker-compose.yml`.
-3. Paste this YAML into it:
+Every push to `main` builds and publishes:
+
+```text
+illerin/timetracker:latest
+```
+
+GitHub Actions publishes the image to Docker Hub using the repository secrets
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.
+
+## Portainer Setup
+
+Create a stack using `docker-compose.portainer.yml`, or paste this YAML:
 
 ```yaml
 services:
   timetracker:
     image: illerin/timetracker:latest
     container_name: timetracker
+    restart: unless-stopped
     ports:
       - "3025:3000"
     volumes:
@@ -22,36 +32,22 @@ volumes:
   timetracker-data:
 ```
 
-4. Download and start the app:
+When updating the stack, pull the latest image and redeploy it. Existing app data
+remains in the `timetracker-data` volume.
+
+## Docker Compose Setup
+
+Start the app:
 
 ```powershell
-docker compose up -d
+docker compose -f docker-compose.local.yml pull
+docker compose -f docker-compose.local.yml up -d
 ```
 
-5. Open the app:
+Open the app:
 
 ```text
 http://localhost:3025
-```
-
-## YAML Notes
-
-- Uses image `illerin/timetracker:latest`
-- Maps host port `3025` to container port `3000`
-- Stores app data in the Docker volume `timetracker-data`
-
-To use a different host port, edit:
-
-```yaml
-ports:
-  - "3025:3000"
-```
-
-For example, change `3025` to `8080`:
-
-```yaml
-ports:
-  - "8080:3000"
 ```
 
 ## Common Commands
@@ -59,18 +55,18 @@ ports:
 Stop the app:
 
 ```powershell
-docker compose down
+docker compose -f docker-compose.local.yml down
 ```
 
 Pull the latest image and restart:
 
 ```powershell
-docker compose pull
-docker compose up -d
+docker compose -f docker-compose.local.yml pull
+docker compose -f docker-compose.local.yml up -d
 ```
 
 View logs:
 
 ```powershell
-docker compose logs -f
+docker compose -f docker-compose.local.yml logs -f
 ```

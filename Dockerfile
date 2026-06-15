@@ -1,17 +1,17 @@
 # ── base: shared layer ────────────────────────────────────────────────────────
 FROM node:20-alpine AS base
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json ./
 
 # ── dev: all deps (prod + dev) for running tests ──────────────────────────────
 FROM base AS dev
-RUN npm install
+RUN npm ci
 COPY server/ ./server/
 COPY public/ ./public/
 
 # ── prod: production-only deps ────────────────────────────────────────────────
 FROM base AS prod
-RUN npm install --production
+RUN npm ci --omit=dev
 COPY server/ ./server/
 COPY public/ ./public/
 EXPOSE 3000

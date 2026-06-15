@@ -16,6 +16,12 @@ yarn-error.log*
 *.bak
 *.backup
 *.tmp
+timetracker-backup-*.json
+timetracker-invoice-*.pdf
+timetracker-invoice-*.xlsx
+*.pdf
+*.xlsx
+*.xls
 
 dist/
 coverage/

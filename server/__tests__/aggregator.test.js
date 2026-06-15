@@ -63,7 +63,11 @@ describe('Property 9: Summary descending date order', () => {
     fc.assert(
       fc.property(
         fc.array(
-          fc.date({ min: new Date('2020-01-01'), max: new Date('2026-12-31') }),
+          fc.date({
+            min: new Date('2020-01-01'),
+            max: new Date('2026-12-31'),
+            noInvalidDate: true
+          }),
           { minLength: 2, maxLength: 10 }
         ),
         (dates) => {

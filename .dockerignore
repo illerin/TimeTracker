@@ -1,0 +1,17 @@
+.git
+.github
+.kiro
+node_modules
+coverage
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.log
+*.bak
+*.backup
+*.pdf
+*.xlsx
+*.xls
+timetracker-backup-*.json

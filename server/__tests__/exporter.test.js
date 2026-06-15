@@ -37,7 +37,7 @@ describe('invoice exporters', () => {
     expect(rows).toContainEqual(['TO:', 'To Set']);
     expect(rows).toContainEqual(['FROM:', 'From Set']);
     expect(rows).toContainEqual(['DATE', 'DESCRIPTION', 'alpha', 'beta']);
-    expect(rows).toContainEqual(['2026-01-01', 'Build', 2.5, 0]);
+    expect(rows).toContainEqual(['2026-01-01', 'Build', 2.5, '']);
     expect(rows).toContainEqual(['TOTAL HOURS BY PROJECT', '', 2.5, 1]);
     expect(rows).toContainEqual(['RATE', '', 45, 50]);
     expect(rows).toContainEqual(['TOTAL FEE THIS PERIOD', 162.5]);
