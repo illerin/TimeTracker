@@ -10,7 +10,7 @@
     "better-sqlite3": "12.10.1",
     "exceljs": "4.4.0",
     "express": "5.2.1",
-    "pdfkit": "0.19.1"
+    "pdfkit": "0.20.1"
   },
   "devDependencies": {
     "fast-check": "4.8.0",
